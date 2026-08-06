@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: bilisub
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: ACCESS_TOKEN
+        sync: false
+      - key: BIND_HOST
+        value: 0.0.0.0
