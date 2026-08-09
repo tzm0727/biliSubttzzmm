@@ -2,15 +2,13 @@
   "name": "bilisub-web",
   "version": "1.0.0",
   "private": true,
-  "description": "biliSub Web：B站/YouTube 字幕下载 + 文件管理 + 阅读器 + DeepSeek 润色/科普文章",
+  "description": "biliSub Web：B站字幕下载 + 文件管理 + 阅读器 + DeepSeek 润色/科普文章",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "get-youtube-transcript": "^1.0.0",
     "marked": "^18.0.9",
-    "qrcode": "^1.5.4",
-    "youtube-transcript-plus": "^2.0.1"
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "esbuild": "^0.28.1"

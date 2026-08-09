@@ -85,10 +85,6 @@
       return this.get("/api/bili/subtitle", { url });
     },
 
-    youtubeFetch(url) {
-      return this.get("/api/youtube/fetch", { url });
-    },
-
     aiChat(payload, signal) {
       return this.post("/api/ai/chat", payload, signal);
     },
