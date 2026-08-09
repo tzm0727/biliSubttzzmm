@@ -9,7 +9,8 @@
   "dependencies": {
     "get-youtube-transcript": "^1.0.0",
     "marked": "^18.0.9",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "youtube-transcript-plus": "^2.0.1"
   },
   "devDependencies": {
     "esbuild": "^0.28.1"
