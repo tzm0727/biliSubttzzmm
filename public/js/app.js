@@ -400,6 +400,7 @@
           title: info.title || "",
           bvid: info.bvid || "",
           lang: info.lang || "",
+          platform: info.platform || "bilibili",
           subtitles: segments.map((s) => ({
             from: s.start,
             to: s.end,
@@ -459,6 +460,67 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     throw new Error("不支持的格式：" + fmt);
   }
 
+  function isYoutubeUrl(url) {
+    try {
+      const u = new URL(String(url).trim());
+      const host = u.hostname.replace(/^www\./, "").replace(/^m\./, "");
+      if (host === "youtu.be") return true;
+      if (
+        host === "youtube.com" ||
+        host === "music.youtube.com" ||
+        host === "youtube-nocookie.com"
+      ) {
+        return true;
+      }
+    } catch (_) {}
+    return /^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(
+      String(url)
+    );
+  }
+
+  async function downloadYoutube(url, formats) {
+    appendLog("[YouTube] 正在获取字幕（无需登录）…");
+    const r = await api.youtubeFetch(url);
+    if (r.error) throw new Error(r.error);
+    const raw = (r.segments || []).map((s) => ({
+      start: Number(s.start) || 0,
+      end: Number(s.end) || 0,
+      content: String(s.content || "").trim(),
+      lang: r.lang || s.lang || "",
+    }));
+    const segments = cleanSegments(raw);
+    if (!segments.length) throw new Error("字幕内容为空");
+    const title = r.title || `YouTube-${r.videoId || "video"}`;
+    appendLog(`视频：${title}（字幕语言：${r.langName || r.lang || "未知"}）`);
+    let cleanTitle = sanitize(title);
+    if (state.shortName) {
+      try {
+        const short = await ai.shortFileName(title, aiSettings());
+        if (short) cleanTitle = sanitize(short);
+      } catch (_) {
+        cleanTitle = ai.fallbackShortName(title);
+      }
+    }
+    for (const fmt of formats) {
+      const content = generateFormat(segments, fmt, {
+        title,
+        bvid: r.videoId || "",
+        lang: r.lang || "",
+        platform: "youtube",
+      });
+      const name = `${cleanTitle}.${fmt}`;
+      await storage.saveFile({
+        name,
+        ext: fmt,
+        content,
+        bvid: r.videoId || "",
+        lang: r.lang || "",
+        meta: { title, lang: r.lang || "", from: url, platform: "youtube" },
+      });
+    }
+    appendLog(`✔ 已保存：${cleanTitle}.${formats.join(", ")}`);
+  }
+
   async function startDownload() {
     if (state.dlRunning) return;
     const urls = $("links").value
@@ -466,7 +528,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       .map((s) => s.trim())
       .filter(Boolean);
     if (!urls.length) {
-      alert("请先粘贴至少一个 B 站视频链接。");
+      alert("请先粘贴至少一个 B 站或 YouTube 视频链接。");
       return;
     }
     const formats = Array.from(
@@ -474,16 +536,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     ).map((i) => i.value);
     if (!formats.length) formats.push("txt");
 
-    let loggedIn = false;
-    try {
-      const nav = await api.nav();
-      loggedIn = !!(nav.json && nav.json.data && nav.json.data.isLogin);
-    } catch (_) {}
-    if (!loggedIn) {
-      const ok = confirm(
-        "尚未登录 B 站，可能下载不到字幕。\n\n继续吗？（建议先点右上角「扫码登录」）"
-      );
-      if (!ok) return;
+    const onlyYt = urls.every(isYoutubeUrl);
+    if (!onlyYt) {
+      let loggedIn = false;
+      try {
+        const nav = await api.nav();
+        loggedIn = !!(nav.json && nav.json.data && nav.json.data.isLogin);
+      } catch (_) {}
+      if (!loggedIn) {
+        const ok = confirm(
+          "尚未登录 B 站，可能下载不到字幕。\n\n继续吗？（建议先点右上角「扫码登录」）"
+        );
+        if (!ok) return;
+      }
     }
 
     state.dlRunning = true;
@@ -500,6 +565,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const url = urls[i];
       appendLog(`[${i + 1}/${urls.length}] 解析链接：${url}`);
       try {
+        if (isYoutubeUrl(url)) {
+          setDlProgress((i / urls.length) * 100, "正在获取 YouTube 字幕…");
+          await downloadYoutube(url, formats);
+          setDlProgress(
+            ((i + 1) / urls.length) * 100,
+            `已完成 ${i + 1}/${urls.length}`
+          );
+          ok++;
+          await sleep(800);
+          continue;
+        }
         const r = await api.resolve(url);
         if (r.error) throw new Error(r.error);
         const bvid = r.bvid;

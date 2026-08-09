@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <title>biliSub Web</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">biliSub <span class="version">Web v4</span></div>
+    <div class="brand">biliSub <span class="version">Web v5</span></div>
     <div class="login-box">
       <span id="login-status" class="badge off">未登录</span>
       <button id="login-btn" class="btn small">扫码登录</button>
@@ -27,8 +27,8 @@
   <main>
     <section id="view-download" class="view active">
       <div class="card">
-        <label class="field-label" for="links">视频链接（每行一个，支持 BV / av / b23.tv 短链 / 分P）</label>
-        <textarea id="links" rows="5" placeholder="https://www.bilibili.com/video/BV1xx411c79H&#10;https://b23.tv/xxxxxx?p=2"></textarea>
+        <label class="field-label" for="links">视频链接（每行一个，支持 B站 BV / av / b23.tv / 分P，也支持 YouTube）</label>
+        <textarea id="links" rows="5" placeholder="https://www.bilibili.com/video/BV1xx411c79H&#10;https://b23.tv/xxxxxx?p=2&#10;https://www.youtube.com/watch?v=xxxxxxxxxxx"></textarea>
 
         <div class="fmt-row">
           <span class="field-label">输出格式：</span>
@@ -116,7 +116,7 @@
           <button id="save-cookie-btn" class="btn">保存 Cookie</button>
           <button id="clear-cookie-btn" class="btn ghost">清除</button>
         </div>
-        <p class="hint">扫码登录失败时可手动粘贴浏览器里的 B 站 Cookie。Cookie 仅保存在本机，用于获取字幕。</p>
+        <p class="hint">下载 B 站字幕需要登录；YouTube 字幕无需登录。扫码登录失败时可手动粘贴浏览器里的 B 站 Cookie，Cookie 仅保存在本机。</p>
       </div>
 
       <div class="card">
@@ -160,11 +160,11 @@
     </div>
   </div>
 
-  <script src="libs/qrcode.min.js?v=4"></script>
-  <script src="libs/marked.min.js?v=4"></script>
-  <script src="js/storage.js?v=4"></script>
-  <script src="js/api.js?v=4"></script>
-  <script src="js/ai.js?v=4"></script>
-  <script src="js/app.js?v=4"></script>
+  <script src="libs/qrcode.min.js?v=5"></script>
+  <script src="libs/marked.min.js?v=5"></script>
+  <script src="js/storage.js?v=5"></script>
+  <script src="js/api.js?v=5"></script>
+  <script src="js/ai.js?v=5"></script>
+  <script src="js/app.js?v=5"></script>
 </body>
 </html>

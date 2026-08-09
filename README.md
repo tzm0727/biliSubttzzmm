@@ -1,9 +1,9 @@
 # biliSub Web
 
-B 站字幕下载网页版（后续可打包成安卓 App）：
+B 站 / YouTube 字幕下载网页版（后续可打包成安卓 App）：
 
-- 扫码登录 B 站，Cookie 只保存在本机
-- 粘贴视频链接下载字幕（TXT / SRT / ASS / VTT / JSON / LRC）
+- 扫码登录 B 站（仅下载 B 站字幕需要），Cookie 只保存在本机
+- 粘贴 B 站或 YouTube 链接下载字幕（TXT / SRT / ASS / VTT / JSON / LRC）；YouTube 无需登录
 - 字幕语言自动选择：中文 > 英文 > 其他（只导出一条）
 - 文件管理：导入、搜索、阅读、重命名、删除、导出
 - 集成阅读器：TXT / Markdown 阅读，字号调节、夜间模式、记住阅读位置
@@ -23,8 +23,8 @@ node server.js
 
 ## 使用提示
 
-1. 先点右上角「扫码登录」用 B 站 App 扫码（下载字幕通常需要登录）。
-2. 在「下载」页粘贴链接（每行一个），默认只导出 TXT。
+1. 下载 B 站字幕前，先点右上角「扫码登录」用 B 站 App 扫码；下载 YouTube 字幕无需登录。
+2. 在「下载」页粘贴链接（每行一个，B 站或 YouTube 均可），默认只导出 TXT。
 3. 下载完成后到「文档」页查看文件，可点击阅读。
 4. 使用「润色」或「生成文章」前，先在「设置」页填写 DeepSeek API Key。
 5. 所有数据保存在浏览器本地（IndexedDB / localStorage），关闭页面不丢失；清除浏览器数据会清空。
@@ -35,3 +35,4 @@ node server.js
 - AI 技能提示词来自两个 MIT 开源项目：
   - transcript-polisher（rookie-ricardo/erduo-skills）
   - science-writing（Ariclk-L/science-writing-skill）
+- YouTube 字幕使用开源包 get-youtube-transcript（MIT，jamhimself/youtube-transcript-cli），免 API Key，自动处理 YouTube PoToken 校验

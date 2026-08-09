@@ -1,5 +1,6 @@
 // biliSub Web 本地服务
-// 纯 Node 实现，无第三方依赖。浏览器通过本服务访问 B 站与 DeepSeek，
+// 服务端基于 Node 原生 http；B 站与 DeepSeek 由本服务代理访问，
+// YouTube 字幕使用开源包 get-youtube-transcript（MIT，免 API Key）。
 // B 站登录 Cookie 保存在浏览器 localStorage，并在每次请求时同步到本服务。
 const http = require("http");
 const fs = require("fs");
@@ -234,6 +235,69 @@ function signedParams(params, mixinKey) {
 }
 
 // ---------------------------------------------------------------------------
+// YouTube 字幕（开源包 get-youtube-transcript，MIT，免 API Key）
+// 该包会自动处理 YouTube 的 PoToken/BotGuard 校验，比手写抓取更稳定
+// ---------------------------------------------------------------------------
+async function fetchYtTitle(videoId) {
+  try {
+    const u =
+      "https://www.youtube.com/oembed?format=json&url=" +
+      encodeURIComponent("https://www.youtube.com/watch?v=" + videoId);
+    const resp = await fetch(u, {
+      headers: { "User-Agent": BILI_UA, "Accept-Language": "zh-CN,zh;q=0.9" },
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.title) return String(data.title);
+    }
+  } catch (_) {
+    /* 标题获取失败时使用兜底名 */
+  }
+  return "";
+}
+
+async function fetchYoutubeSubtitle(rawUrl) {
+  const mod = await import("get-youtube-transcript");
+  const videoId = mod.parseVideoId(rawUrl);
+  if (!videoId) throw new Error("无法识别的 YouTube 链接");
+  // 语言优先级：中文 > 英语 > 其他；人工字幕优先于自动生成字幕
+  const result = await mod.getTranscript(rawUrl, {
+    languages: [
+      "zh",
+      "zh-CN",
+      "zh-Hans",
+      "zh-Hant",
+      "en",
+      "en-US",
+      "en-GB",
+      "ja",
+      "ko",
+    ],
+  });
+  if (!result || !result.segments || !result.segments.length) {
+    throw new Error("该视频没有可用字幕（或无字幕权限）");
+  }
+  const segments = result.segments
+    .map((s) => ({
+      start: Number(s.start) || 0,
+      end: (Number(s.start) || 0) + (Number(s.duration) || 0),
+      content: String(s.text || "").trim(),
+      lang: result.language || "",
+    }))
+    .filter((s) => s.content);
+  if (!segments.length) throw new Error("字幕内容为空");
+  const title = (await fetchYtTitle(videoId)) || `YouTube-${videoId}`;
+  return {
+    videoId,
+    title,
+    lang: result.language || "",
+    langName:
+      result.kind === "auto-generated" ? "自动生成（机翻）" : "人工字幕",
+    segments,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 工具
 // ---------------------------------------------------------------------------
 function extractBvid(input) {
@@ -391,6 +455,34 @@ async function handleApi(req, res, url, body) {
     if (!/^https?:/i.test(subUrl)) subUrl = "https:" + subUrl;
     const r = await biliGet(subUrl, "https://www.bilibili.com/video/");
     return sendJson(res, 200, { json: r.json, cookies: cookiesArray() });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/youtube/fetch") {
+    const rawUrl = p.get("url") || "";
+    if (!rawUrl) return sendJson(res, 400, { error: "缺少 YouTube 链接" });
+    try {
+      const data = await fetchYoutubeSubtitle(rawUrl);
+      return sendJson(res, 200, data);
+    } catch (e) {
+      let msg = String(e.message || e);
+      if (/no captions/i.test(msg)) msg = "该视频没有可用字幕（或无字幕权限）";
+      else if (/rate-limiting|rate limit/i.test(msg))
+        msg = "YouTube 暂时限制了本服务器访问，请稍后再试";
+      else if (/not a valid youtube/i.test(msg))
+        msg = "无法识别的 YouTube 链接";
+      else if (/video not available/i.test(msg))
+        msg = "该视频不可用或已被删除";
+      else if (/empty transcript/i.test(msg))
+        msg = "字幕内容为空（视频可能受区域或年龄限制）";
+      return sendJson(res, 200, {
+        error: msg,
+        videoId: "",
+        title: "",
+        lang: "",
+        langName: "",
+        segments: [],
+      });
+    }
   }
 
   if (req.method === "POST" && url.pathname === "/api/ai/chat") {
