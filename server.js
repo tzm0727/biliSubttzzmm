@@ -1,4 +1,239 @@
 // biliSub Web 本地服务
+// 服务端基于 Node 原生 http；B 站与 DeepSeek 由本服务代理访问，
+// B 站登录 Cookie 保存在浏览器 localStorage，并在每次请求时同步到本服务。
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+
+const PORT = Number(process.env.PORT || 8324);
+const PUBLIC_DIR = path.join(__dirname, "public");
+const CONFIG_PATH = path.join(__dirname, "server-config.json");
+const BIND_HOST = process.env.BIND_HOST || "127.0.0.1";
+const BILI_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+
+function loadServerConfig() {
+  const fromEnv = {};
+  if (process.env.DEEPSEEK_API_KEY) {
+    fromEnv.deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+  }
+  if (process.env.ACCESS_TOKEN) {
+    fromEnv.accessToken = process.env.ACCESS_TOKEN;
+  }
+  try {
+    const fromFile = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    return Object.assign({}, fromFile, fromEnv);
+  } catch (_) {
+    return fromEnv;
+  }
+}
+const serverConfig = loadServerConfig();
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".map": "application/json",
+};
+
+// ---------------------------------------------------------------------------
+// B 站 Cookie 罐（内存）
+// ---------------------------------------------------------------------------
+const jar = new Map();
+const activeAIRequests = new Map();
+
+function parseSetCookie(str) {
+  const parts = String(str || "").split(";");
+  const first = (parts.shift() || "").trim();
+  const eq = first.indexOf("=");
+  const name = eq > 0 ? first.slice(0, eq).trim() : "";
+  const value = eq >= 0 ? first.slice(eq + 1).trim() : "";
+  let domain = "";
+  let pathValue = "/";
+  let expires = null;
+  let secure = false;
+  for (const p of parts) {
+    const seg = p.trim();
+    const idx = seg.indexOf("=");
+    const key = (idx >= 0 ? seg.slice(0, idx) : seg).trim().toLowerCase();
+    const val = idx >= 0 ? seg.slice(idx + 1).trim() : "";
+    if (key === "domain") domain = val;
+    else if (key === "path") pathValue = val || "/";
+    else if (key === "expires") expires = Date.parse(val);
+    else if (key === "max-age") expires = Date.now() + Number(val) * 1000;
+    else if (key === "secure") secure = true;
+  }
+  return { name, value, domain, path: pathValue, expires, secure };
+}
+
+function mergeSetCookies(requestUrl, setCookieList) {
+  const host = new URL(requestUrl).hostname;
+  for (const raw of setCookieList || []) {
+    const c = parseSetCookie(raw);
+    if (!c.name) continue;
+    if (!c.domain) c.domain = host;
+    if (c.expires && c.expires <= Date.now()) {
+      jar.delete(`${c.domain}|${c.path}|${c.name}`);
+      continue;
+    }
+    jar.set(`${c.domain}|${c.path}|${c.name}`, c);
+  }
+}
+
+function domainMatches(domain, host) {
+  const d = domain.startsWith(".") ? domain.slice(1) : domain;
+  return host === d || host.endsWith("." + d);
+}
+
+function buildCookieHeader(requestUrl) {
+  const u = new URL(requestUrl);
+  const host = u.hostname;
+  const pathName = u.pathname || "/";
+  const parts = [];
+  for (const c of jar.values()) {
+    if (!domainMatches(c.domain, host)) continue;
+    if (!pathName.startsWith(c.path)) continue;
+    if (c.secure && u.protocol !== "https:") continue;
+    parts.push(`${c.name}=${c.value}`);
+  }
+  return parts.join("; ");
+}
+
+function cookiesArray() {
+  return Array.from(jar.values()).map((c) => ({
+    name: c.name,
+    value: c.value,
+    domain: c.domain,
+    path: c.path,
+    expires: c.expires,
+    secure: c.secure,
+  }));
+}
+
+function setCookiesArray(arr) {
+  jar.clear();
+  for (const c of Array.isArray(arr) ? arr : []) {
+    if (c && c.name) {
+      jar.set(
+        `${c.domain || ""}|${c.path || "/"}|${c.name}`,
+        {
+          name: c.name,
+          value: c.value || "",
+          domain: c.domain || "",
+          path: c.path || "/",
+          expires: c.expires || null,
+          secure: !!c.secure,
+        }
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// B 站 HTTP 请求
+// ---------------------------------------------------------------------------
+async function biliGet(url, referer = "https://www.bilibili.com") {
+  const headers = {
+    "User-Agent": BILI_UA,
+    Referer: referer,
+    Origin: "https://www.bilibili.com",
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+  };
+  const cookie = buildCookieHeader(url);
+  if (cookie) headers.Cookie = cookie;
+  const resp = await fetch(url, { headers, redirect: "manual" });
+  const setCookies = resp.headers.getSetCookie
+    ? resp.headers.getSetCookie()
+    : [];
+  mergeSetCookies(url, setCookies);
+  const text = await resp.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch (_) {
+    /* 非 JSON */
+  }
+  return { status: resp.status, headers: resp.headers, json, text };
+}
+
+async function followWithCookies(url, maxRedirects = 12) {
+  let current = url;
+  for (let i = 0; i < maxRedirects; i++) {
+    const r = await biliGet(current, "https://www.bilibili.com");
+    const loc = r.headers.get("location");
+    if (r.status >= 300 && r.status < 400 && loc) {
+      current = new URL(loc, current).href;
+      continue;
+    }
+    return { status: r.status, finalUrl: current, json: r.json, text: r.text };
+  }
+  return { status: 0, finalUrl: current, json: null, text: "" };
+}
+
+// ---------------------------------------------------------------------------
+// WBI 签名
+// ---------------------------------------------------------------------------
+const MIXIN_KEY_ENC_TAB = [
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+  33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+  61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+  36, 20, 34, 44, 52,
+];
+const FALLBACK_WBI_KEYS = {
+  imgKey: "7cd084941338484aae1ad9425b84077c",
+  subKey: "4932caff0ff746eab6f01bf08b70ac45",
+};
+
+let wbiCache = { keys: null, at: 0 };
+
+async function getWbiKeys() {
+  if (wbiCache.keys && Date.now() - wbiCache.at < 12 * 3600 * 1000) {
+    return wbiCache.keys;
+  }
+  let imgKey = FALLBACK_WBI_KEYS.imgKey;
+  let subKey = FALLBACK_WBI_KEYS.subKey;
+  try {
+    const r = await biliGet("https://api.bilibili.com/x/web-interface/nav");
+    const img = (r.json && r.json.data && r.json.data.wbi_img) || {};
+    if (img.img_url && img.sub_url) {
+      imgKey = img.img_url.split("/").pop().split(".")[0];
+      subKey = img.sub_url.split("/").pop().split(".")[0];
+    }
+  } catch (_) {
+    /* 使用备用 key */
+  }
+  const mixinKey = MIXIN_KEY_ENC_TAB.map((i) => (imgKey + subKey)[i])
+    .join("")
+    .slice(0, 32);
+  wbiCache = { keys: { imgKey, subKey, mixinKey }, at: Date.now() };
+  return wbiCache.keys;
+}
+
+function signedParams(params, mixinKey) {
+  const p = Object.assign({}, params, { wts: Math.floor(Date.now() / 1000) });
+  const filter = (s) => String(s).replace(/[!'()*]/g, "");
+  const query = Object.keys(p)
+    .sort()
+    .map((k) => `${filter(k)}=${encodeURIComponent(filter(p[k]))}`)
+    .join("&");
+  const wRid = crypto.createHash("md5").update(query + mixinKey).digest("hex");
+  return `${query}&w_rid=${wRid}`;
+}
+
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -260,7 +495,10 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
   try {
     if (url.pathname.startsWith("/api/")) {
-      if (url.pathname !== "/api/health" && serverConfig.accessToken) {
+      if (
+        url.pathname !== "/api/health" &&
+        serverConfig.accessToken
+      ) {
         const token = String(req.headers["x-access-token"] || "");
         if (token !== serverConfig.accessToken) {
           return sendJson(res, 401, { error: "访问口令错误，请在「设置」页填写正确的访问口令" });
