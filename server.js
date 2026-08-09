@@ -359,6 +359,121 @@ async function fetchYtSubtitleAndroid(rawUrl, videoId) {
   throw lastErr || new Error("该视频没有可用字幕（或无字幕权限）");
 }
 
+const YT_INNERTUBE_KEYS = [
+  "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+  "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+];
+
+async function fetchYtSubtitleInnertube(rawUrl, videoId) {
+  const endpoints = [
+    "https://youtubei.googleapis.com/youtubei/v1/player",
+    "https://www.youtube.com/youtubei/v1/player",
+  ];
+  const payload = {
+    context: {
+      client: {
+        clientName: "ANDROID",
+        clientVersion: "20.10.38",
+      },
+    },
+    videoId,
+  };
+  let lastErr = null;
+  for (const endpoint of endpoints) {
+    for (const key of YT_INNERTUBE_KEYS) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        const resp = await fetch(
+          `${endpoint}?key=${encodeURIComponent(key)}&prettyPrint=false`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "User-Agent": BILI_UA,
+              "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            },
+            body: JSON.stringify(payload),
+            signal: ctrl.signal,
+          }
+        );
+        clearTimeout(timer);
+        if (!resp.ok) {
+          throw new Error(`播放器接口 HTTP ${resp.status}`);
+        }
+        const player = await resp.json();
+        const ps = player && player.playabilityStatus;
+        const tracks =
+          (player &&
+            player.captions &&
+            player.captions.playerCaptionsTracklistRenderer &&
+            player.captions.playerCaptionsTracklistRenderer.captionTracks) ||
+          [];
+        if (!tracks.length) {
+          throw new Error(
+            `无字幕轨道（playability=${(ps && ps.status) || "-"} ${
+              (ps && ps.reason) || ""
+            }）`
+          );
+        }
+        const candidates = [...tracks].sort(
+          (a, b) => rankYtLang(a) - rankYtLang(b)
+        );
+        for (const track of candidates.slice(0, 4)) {
+          try {
+            const baseUrl =
+              String(track.baseUrl || "") +
+              (String(track.baseUrl || "").includes("?") ? "&" : "?") +
+              "fmt=vtt";
+            const tCtrl = new AbortController();
+            const tTimer = setTimeout(() => tCtrl.abort(), 25000);
+            const tResp = await fetch(baseUrl, {
+              headers: {
+                "User-Agent": BILI_UA,
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+              },
+              signal: tCtrl.signal,
+            });
+            clearTimeout(tTimer);
+            if (!tResp.ok) throw new Error(`字幕接口 HTTP ${tResp.status}`);
+            const vttText = await tResp.text();
+            const segments = parseVttSegments(vttText).map((s) =>
+              Object.assign({}, s, { lang: track.languageCode || "" })
+            );
+            if (!segments.length) throw new Error("字幕内容为空");
+            return {
+              videoId,
+              title:
+                (player.videoDetails && player.videoDetails.title) ||
+                (await fetchYtTitle(videoId)) ||
+                `YouTube-${videoId}`,
+              lang: track.languageCode || "",
+              langName:
+                track.kind === "asr"
+                  ? "自动生成（机翻）"
+                  : track.name && track.name.simpleText
+                  ? track.name.simpleText
+                  : "人工字幕",
+              segments,
+            };
+          } catch (e) {
+            lastErr = e;
+            const msg = String(e.message || "");
+            if (!/字幕内容为空|HTTP/.test(msg)) throw e;
+          }
+        }
+        throw lastErr || new Error("字幕内容为空");
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+  }
+  throw (
+    lastErr ||
+    new Error("该视频没有可用字幕（或无字幕权限）")
+  );
+}
+
 function hasYtdlp() {
   try {
     fs.accessSync(YTDLP_PATH, fs.constants.X_OK);
@@ -565,8 +680,9 @@ async function fetchYoutubeSubtitle(rawUrl) {
   const hit = ytCache.get(videoId);
   if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.data;
   const channels = [
-    ["安卓客户端", () => fetchYtSubtitleAndroid(rawUrl, videoId)],
+    ["安卓客户端-直连", () => fetchYtSubtitleInnertube(rawUrl, videoId)],
   ];
+  channels.push(["安卓客户端-官方库", () => fetchYtSubtitleAndroid(rawUrl, videoId)]);
   if (hasYtdlp()) {
     channels.push(["yt-dlp 多客户端", () => fetchYtSubtitleYtdlp(rawUrl, videoId)]);
     channels.push(["yt-dlp 代理轮询", () => fetchYtSubtitleViaProxy(rawUrl, videoId)]);
@@ -915,6 +1031,55 @@ async function diagYoutube(rawUrl) {
         detail += ` timedtext=${tt.status} len=${String(tt.body).length}`;
       }
       return detail;
+    });
+  }
+
+  for (const host of [
+    "https://youtubei.googleapis.com",
+    "https://www.youtube.com",
+  ]) {
+    await run(`innertube-android-${host.replace("https://", "")}`, async () => {
+      const payload = {
+        context: {
+          client: {
+            clientName: "ANDROID",
+            clientVersion: "20.10.38",
+          },
+        },
+        videoId,
+      };
+      let best = "";
+      for (const key of YT_INNERTUBE_KEYS) {
+        const r = await diagFetch(
+          `${host}/youtubei/v1/player?key=${key}&prettyPrint=false`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+          15000
+        );
+        let pr = null;
+        try {
+          pr = JSON.parse(r.body);
+        } catch (_) {}
+        const tracks = pr ? extractCaptionTracks(pr) : [];
+        const ps = (pr && pr.playabilityStatus) || {};
+        best = `HTTP ${r.status} play=${ps.status} reason=${ps.reason || "-"} tracks=${tracks.length}`;
+        if (tracks.length) {
+          const track = tracks[0];
+          const tt = await diagFetch(
+            track.baseUrl +
+              (String(track.baseUrl).includes("?") ? "&" : "?") +
+              "fmt=vtt",
+            {},
+            20000
+          );
+          best += ` | first=${track.languageCode} ${track.kind || ""} timedtext=${tt.status}/${String(tt.body).length}`;
+          break;
+        }
+      }
+      return best;
     });
   }
 
