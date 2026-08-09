@@ -1,4 +1,5 @@
 node_modules/
+yt-dlp
 cloudflared.exe
 server-config.json
 *.log

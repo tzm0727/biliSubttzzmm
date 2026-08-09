@@ -35,4 +35,4 @@ node server.js
 - AI 技能提示词来自两个 MIT 开源项目：
   - transcript-polisher（rookie-ricardo/erduo-skills）
   - science-writing（Ariclk-L/science-writing-skill）
-- YouTube 字幕使用开源包 youtube-transcript-plus（MIT，ericmmartin/youtube-transcript-plus，安卓客户端 Innertube 接口，免 API Key），失败时自动切换 get-youtube-transcript（MIT，PoToken 方案）作为后备
+- YouTube 字幕使用三道开源通道依次尝试：youtube-transcript-plus（MIT，安卓客户端）、yt-dlp（多客户端自动切换）、get-youtube-transcript（MIT，PoToken 方案），并带 30 分钟缓存
