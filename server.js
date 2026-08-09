@@ -1546,6 +1546,34 @@ async function handleApi(req, res, url, body) {
     }
   }
 
+  if (req.method === "GET" && url.pathname === "/api/youtube/probe") {
+    const rawUrl = p.get("url") || "";
+    if (!rawUrl) return sendJson(res, 400, { error: "缺少 YouTube 链接" });
+    const videoId = extractYoutubeId(rawUrl);
+    if (!videoId) return sendJson(res, 200, { ok: false, error: "无法识别视频 ID" });
+    try {
+      const data = await Promise.race([
+        fetchYtSubtitleInnertube(rawUrl, videoId),
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error("安卓直连通道超时 60s")), 60000)
+        ),
+      ]);
+      return sendJson(res, 200, {
+        ok: true,
+        videoId,
+        title: data.title,
+        lang: data.lang,
+        langName: data.langName,
+        segments: data.segments.length,
+      });
+    } catch (e) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: String((e && e.message) || e).slice(0, 400),
+      });
+    }
+  }
+
   if (req.method === "POST" && url.pathname === "/api/ai/chat") {
     const apiKey = String(body.apiKey || "").trim() || serverConfig.deepseekApiKey || "";
     const user = String(body.user || "");
@@ -1649,6 +1677,7 @@ const server = http.createServer(async (req, res) => {
       if (
         url.pathname !== "/api/health" &&
         url.pathname !== "/api/youtube/diag" &&
+        url.pathname !== "/api/youtube/probe" &&
         serverConfig.accessToken
       ) {
         const token = String(req.headers["x-access-token"] || "");
