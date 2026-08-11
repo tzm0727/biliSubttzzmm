@@ -234,6 +234,885 @@ function signedParams(params, mixinKey) {
   return `${query}&w_rid=${wRid}`;
 }
 
+// ---------------------------------------------------------------------------
+// 议题成文引擎：规划 → 免费搜索 → 分章写作 → 合并（SSE 进度）
+// ---------------------------------------------------------------------------
+const ARTICLE_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const SEARX_INSTANCES = [
+  "https://searx.be",
+  "https://search.inetol.net",
+  "https://searx.tiekoetter.com",
+  "https://opnxng.com",
+  "https://search.bus-hit.me",
+];
+const articleSearchCache = new Map(); // query -> { at, results }
+
+function decodeHtmlEntities(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => {
+      try {
+        return String.fromCodePoint(Number(d));
+      } catch (_e) {
+        return "";
+      }
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      try {
+        return String.fromCodePoint(parseInt(h, 16));
+      } catch (_e) {
+        return "";
+      }
+    });
+}
+
+function stripHtml(s) {
+  return decodeHtmlEntities(
+    String(s || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  ).replace(/\s+/g, " ");
+}
+
+function truncate(s, n) {
+  const t = String(s || "").trim();
+  return t.length > n ? t.slice(0, n) + "…" : t;
+}
+
+function htmlToArticleText(html, maxChars) {
+  const out = [];
+  let cleaned = String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<(nav|footer|header|aside|form|noscript)[\s\S]*?<\/\1>/gi, " ");
+  const titleM = cleaned.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleM) out.push(stripHtml(titleM[1]).trim());
+  const blocks = cleaned.match(
+    /<(h[1-6]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi
+  );
+  if (blocks) {
+    for (const b of blocks) {
+      const text = stripHtml(b).trim();
+      if (text && !/^(首页|登录|注册|更多|阅读全文|评论)/.test(text)) {
+        out.push(text);
+      }
+    }
+  }
+  const joined = out.filter(Boolean).join("\n");
+  return truncate(joined, maxChars || 6000);
+}
+
+async function fetchText(url, timeoutMs, maxBytes, signal) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 12000);
+  const onParentAbort = () => ctrl.abort();
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener("abort", onParentAbort);
+  }
+  try {
+    const resp = await fetch(url, {
+      redirect: "follow",
+      signal: ctrl.signal,
+      headers: {
+        "User-Agent": ARTICLE_UA,
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        Accept: "text/html,application/json,application/xhtml+xml,*/*;q=0.8",
+      },
+    });
+    if (!resp.ok) return { ok: false, status: resp.status, body: "" };
+    const buf = await resp.arrayBuffer();
+    let body = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    if (maxBytes && body.length > maxBytes) body = body.slice(0, maxBytes);
+    return { ok: true, status: resp.status, body };
+  } catch (e) {
+    return { ok: false, status: 0, body: "", err: String((e && e.message) || e) };
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onParentAbort);
+  }
+}
+
+async function deepseekChat(apiKey, system, user, opts) {
+  opts = opts || {};
+  const maxTokens = Number(opts.maxTokens) || 4000;
+  const temperature = opts.temperature === undefined ? 0.7 : Number(opts.temperature);
+  const timeoutMs = Number(opts.timeoutMs) || 180000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onParentAbort = () => ctrl.abort();
+  if (opts.signal) {
+    if (opts.signal.aborted) ctrl.abort();
+    else opts.signal.addEventListener("abort", onParentAbort);
+  }
+  try {
+    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: opts.model || "deepseek-chat",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: maxTokens,
+        temperature,
+        stream: false,
+      }),
+      signal: ctrl.signal,
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg =
+        (data.error && data.error.message) ||
+        JSON.stringify(data).slice(0, 300) ||
+        `HTTP ${resp.status}`;
+      throw new Error(`DeepSeek：${msg}`);
+    }
+    const content = (
+      (data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "") || ""
+    ).trim();
+    if (!content) throw new Error("DeepSeek 返回内容为空");
+    return content;
+  } finally {
+    clearTimeout(timer);
+    if (opts.signal) opts.signal.removeEventListener("abort", onParentAbort);
+  }
+}
+
+function checkAbort(signal) {
+  if (signal && signal.aborted) {
+    const err = new Error("已取消");
+    err.name = "AbortError";
+    throw err;
+  }
+}
+
+async function searchWikipedia(q, signal) {
+  const base = "https://zh.wikipedia.org/w/api.php";
+  const searchUrl =
+    `${base}?action=query&list=search&srsearch=${encodeURIComponent(q)}` +
+    `&format=json&utf8=1&srlimit=5`;
+  const r = await fetchText(searchUrl, 12000, 200000, signal);
+  if (!r.ok) return [];
+  let data = null;
+  try {
+    data = JSON.parse(r.body);
+  } catch (_) {
+    return [];
+  }
+  const items = ((data.query && data.query.search) || []).slice(0, 3);
+  const out = [];
+  for (const it of items) {
+    const title = String(it.title || "");
+    const snippet = stripHtml(it.snippet || "").trim();
+    const extractUrl =
+      `${base}?action=query&prop=extracts&explaintext=1&exchars=1200` +
+      `&titles=${encodeURIComponent(title)}&format=json&utf8=1`;
+    const er = await fetchText(extractUrl, 12000, 200000, signal);
+    let extract = snippet;
+    try {
+      const ej = JSON.parse(er.body);
+      const pages = (ej.query && ej.query.pages) || {};
+      const page = Object.values(pages)[0];
+      if (page && page.extract) extract = String(page.extract).slice(0, 1200);
+    } catch (_) {}
+    out.push({
+      title: `维基百科：${title}`,
+      url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+      snippet: truncate(extract, 700),
+    });
+  }
+  return out;
+}
+
+async function searchDuckDuckGo(q, signal) {
+  const r = await fetchText(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+    12000,
+    300000,
+    signal
+  );
+  if (!r.ok) return [];
+  const html = r.body;
+  const out = [];
+  const linkRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  const snipRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+  const links = [];
+  let m;
+  while ((m = linkRe.exec(html)) && links.length < 6) {
+    links.push({ href: m[1], title: stripHtml(m[2]).trim() });
+  }
+  const snips = [];
+  while ((m = snipRe.exec(html)) && snips.length < 6) {
+    snips.push(stripHtml(m[1]).trim());
+  }
+  for (let i = 0; i < links.length; i++) {
+    let href = links[i].href;
+    const uddg = href.match(/[?&]uddg=([^&]+)/);
+    if (uddg) {
+      try {
+        href = decodeURIComponent(uddg[1]);
+      } catch (_) {}
+    } else if (href.startsWith("//")) {
+      href = "https:" + href;
+    }
+    if (!/^https?:/i.test(href)) continue;
+    out.push({
+      title: links[i].title || href,
+      url: href,
+      snippet: truncate(snips[i] || "", 700),
+    });
+  }
+  return out;
+}
+
+async function searchBing(q, signal) {
+  const r = await fetchText(
+    `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=zh-hans&cc=cn`,
+    12000,
+    400000,
+    signal
+  );
+  if (!r.ok) return [];
+  const html = r.body;
+  const out = [];
+  const blockRe = /<li class="b_algo"[\s\S]*?<\/li>/g;
+  let m;
+  while ((m = blockRe.exec(html)) && out.length < 6) {
+    const block = m[0];
+    const a = block.match(/<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>/i);
+    if (!a) continue;
+    const url = a[1];
+    const title = stripHtml(a[2]).trim();
+    const p = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+    const snippet = p ? stripHtml(p[1]).trim() : "";
+    if (/^https?:/i.test(url)) {
+      out.push({ title: title || url, url, snippet: truncate(snippet, 700) });
+    }
+  }
+  return out;
+}
+
+async function searchSearx(q, signal) {
+  for (const inst of SEARX_INSTANCES.slice(0, 2)) {
+    const r = await fetchText(
+      `${inst}/search?q=${encodeURIComponent(q)}&format=json&language=zh-CN`,
+      10000,
+      300000,
+      signal
+    );
+    if (!r.ok) continue;
+    try {
+      const j = JSON.parse(r.body);
+      const results = (j.results || []).slice(0, 5);
+      if (results.length) {
+        return results.map((it) => ({
+          title: String(it.title || ""),
+          url: String(it.url || ""),
+          snippet: truncate(String(it.content || ""), 700),
+        }));
+      }
+    } catch (_) {
+      /* 尝试 HTML 解析 */
+      const out = [];
+      const artRe = /<article class="result"[^>]*>([\s\S]*?)<\/article>/g;
+      let m;
+      while ((m = artRe.exec(r.body)) && out.length < 5) {
+        const block = m[1];
+        const a = block.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+        const p = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+        if (a && /^https?:/i.test(a[1])) {
+          out.push({
+            title: stripHtml(a[2]).trim(),
+            url: a[1],
+            snippet: truncate(p ? stripHtml(p[1]).trim() : "", 700),
+          });
+        }
+      }
+      if (out.length) return out;
+    }
+  }
+  return [];
+}
+
+function dedupeSources(list) {
+  const seen = new Set();
+  const out = [];
+  for (const s of list || []) {
+    if (!s || !s.url) continue;
+    let key = "";
+    try {
+      const u = new URL(s.url);
+      key = u.hostname + u.pathname;
+    } catch (_) {
+      key = String(s.url);
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+async function searchQuery(q, signal) {
+  checkAbort(signal);
+  const hit = articleSearchCache.get(q);
+  if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.results;
+  const results = await Promise.allSettled([
+    searchWikipedia(q, signal),
+    searchDuckDuckGo(q, signal),
+    searchBing(q, signal),
+    searchSearx(q, signal),
+  ]);
+  const merged = results.flatMap((r) =>
+    r.status === "fulfilled" ? r.value : []
+  );
+  if (merged.length) {
+    articleSearchCache.set(q, { at: Date.now(), results: merged });
+    if (articleSearchCache.size > 300) articleSearchCache.clear();
+  }
+  return merged;
+}
+
+async function searchSection(keywords, questions, sectionTitle, signal) {
+  const queries = [];
+  for (const q of questions || []) {
+    if (q && !queries.includes(q)) queries.push(q);
+  }
+  for (const k of keywords || []) {
+    if (k && !queries.includes(k)) queries.push(k);
+  }
+  if (sectionTitle && !queries.includes(sectionTitle)) {
+    queries.push(sectionTitle);
+  }
+  const qs = queries.slice(0, 2);
+  const merged = [];
+  for (const q of qs) {
+    merged.push(...(await searchQuery(q, signal)));
+    if (merged.length >= 10) break;
+  }
+  const uniq = dedupeSources(merged).slice(0, 6);
+  const notes = [];
+  const fetchJobs = [];
+  for (let i = 0; i < uniq.length; i++) {
+    checkAbort(signal);
+    const src = uniq[i];
+    let eligible = false;
+    try {
+      const host = new URL(src.url).hostname;
+      eligible =
+        i < 3 &&
+        !/youtube\.com|youtu\.be|bilibili\.com|\.pdf$/i.test(src.url) &&
+        !/zh\.wikipedia\.org/i.test(host);
+    } catch (_) {}
+    if (eligible) {
+      fetchJobs.push({ i, p: fetchText(src.url, 12000, 300000, signal) });
+    }
+  }
+  const settled = await Promise.allSettled(fetchJobs.map((j) => j.p));
+  for (let k = 0; k < fetchJobs.length; k++) {
+    const j = fetchJobs[k];
+    const r = settled[k];
+    const src = uniq[j.i];
+    const body =
+      r.status === "fulfilled" && r.value && r.value.ok
+        ? htmlToArticleText(r.value.body, 6000)
+        : src.snippet || "";
+    notes[j.i] = { title: src.title, url: src.url, body: truncate(body, 1200) };
+  }
+  for (let i = 0; i < uniq.length; i++) {
+    if (!notes[i]) {
+      notes[i] = {
+        title: uniq[i].title,
+        url: uniq[i].url,
+        body: truncate(uniq[i].snippet || "", 1200),
+      };
+    }
+  }
+  return notes;
+}
+
+function extractOutline(raw) {
+  let text = String(raw || "").trim();
+  const f = text.indexOf("{");
+  const l = text.lastIndexOf("}");
+  if (f >= 0 && l > f) {
+    try {
+      const obj = JSON.parse(text.slice(f, l + 1));
+      if (obj && Array.isArray(obj.sections) && obj.sections.length) {
+        const sections = obj.sections
+          .filter((s) => s && s.title)
+          .map((s) => ({
+            title: String(s.title).trim(),
+            questions: Array.isArray(s.questions)
+              ? s.questions
+                  .map((x) => String(x).trim())
+                  .filter(Boolean)
+                  .slice(0, 3)
+              : [],
+            keywords: Array.isArray(s.keywords)
+              ? s.keywords
+                  .map((k) => String(k).trim())
+                  .filter(Boolean)
+                  .slice(0, 5)
+              : [],
+          }));
+        if (sections.length) {
+          return {
+            title: String(obj.title || "未命名").trim(),
+            summary: String(obj.summary || "").trim(),
+            perspectives: Array.isArray(obj.perspectives)
+              ? obj.perspectives
+                  .map((p) => String(p).trim())
+                  .filter(Boolean)
+                  .slice(0, 4)
+              : [],
+            sections,
+          };
+        }
+      }
+    } catch (_) {}
+  }
+  // 兜底：按行解析
+  const sections = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:\d+[.、)]\s*)?(.{2,40})$/);
+    if (m && !/^(title|summary|sections|perspectives|questions|keywords|议题|要求)/i.test(m[1])) {
+      sections.push({ title: m[1].trim(), questions: [], keywords: [] });
+    }
+  }
+  return {
+    title: sections[0] ? sections[0].title : "未命名",
+    summary: "",
+    perspectives: [],
+    sections: sections.slice(0, 8),
+  };
+}
+
+async function planArticle(apiKey, topic, extra, targetChars, signal) {
+  const system =
+    "你是一位资深中文主编，擅长把复杂议题规划成结构清晰、视角多元的长文。只输出 JSON，不要输出任何解释。";
+  const user =
+    `议题：${topic}\n补充要求：${extra || "无"}\n目标篇幅：约 ${targetChars} 字。\n\n` +
+    "请输出规划 JSON，格式严格如下：\n" +
+    '{"title":"文章标题（不超过 20 字）","summary":"一句话摘要（30 字内）","perspectives":["视角1","视角2","视角3"],"sections":[{"title":"章节标题（不超过 15 字）","questions":["该章必须回答的研究问题1","研究问题2"],"keywords":["3-5 个搜索关键词"]}]}\n' +
+    "要求：\n" +
+    "1. 章节数量：标准篇幅 6-8 章，每章约 700-1000 字；\n" +
+    "2. perspectives 给出 2-3 个不同立场或背景的视角（例如：产业分析师、技术专家、普通用户、政策研究者、一线从业者），后续写作要兼顾这些视角；\n" +
+    "3. 章节覆盖：背景/现状、核心概念、关键案例、争议或问题、趋势/展望等维度；\n" +
+    "4. 每章写 2 个具体的研究问题（该章必须回答），keywords 要具体，便于搜索引擎找到高质量资料；\n" +
+    "5. 只输出 JSON 本身。";
+  const raw = await deepseekChat(apiKey, system, user, {
+    maxTokens: 2400,
+    temperature: 0.5,
+    signal,
+    timeoutMs: 120000,
+  });
+  const outline = extractOutline(raw);
+  if (!outline.sections.length) {
+    outline.sections = [
+      {
+        title: "背景与现状",
+        questions: [`当前${topic}的整体情况如何？`, `有哪些关键背景需要了解？`],
+        keywords: [topic, "现状"],
+      },
+      {
+        title: "核心概念与原理",
+        questions: [`${topic}的核心概念是什么？`, `底层原理如何理解？`],
+        keywords: [topic, "原理"],
+      },
+      {
+        title: "典型案例",
+        questions: [`${topic}有哪些代表性案例？`, `案例说明了什么？`],
+        keywords: [topic, "案例"],
+      },
+      {
+        title: "争议与问题",
+        questions: [`${topic}存在哪些争议或挑战？`, `不同观点各有什么依据？`],
+        keywords: [topic, "争议"],
+      },
+      {
+        title: "未来趋势",
+        questions: [`${topic}的未来走向如何？`, `有哪些值得关注的趋势？`],
+        keywords: [topic, "趋势"],
+      },
+    ];
+  }
+  outline.sections = outline.sections.slice(0, 8);
+  return outline;
+}
+
+async function writeSection(apiKey, topic, outline, index, notes, prevTail, targetChars, style, signal) {
+  const sec = outline.sections[index];
+  const sectionTarget = Math.max(500, Math.round(targetChars / outline.sections.length));
+  const styleRule =
+    style === "专业"
+      ? "面向有一定基础的读者，用词准确专业，可保留术语，逻辑严密。"
+      : "面向普通大众，通俗易懂、有画面感；专业术语首次出现时用括号给出大白话解释。";
+  const system =
+    "你是一位中文写作专家。你借鉴了维基百科长文（STORM）与深度研究系统（GPT Researcher）的写作规范：\n" +
+    "1. 只依据下方编号资料写作，绝不编造数据、引文或事实；\n" +
+    "2. 行文要有信息量、不空洞，语句流畅自然，避免 AI 腔和套话；\n" +
+    "3. 重要事实或数据在句末用 [n] 标注资料编号；\n" +
+    "4. 逐条回答本章研究问题，做到有问必答。\n" +
+    styleRule;
+  const outlineText = outline.sections
+    .map((s, i) => `${i + 1}. ${s.title}`)
+    .join("\n");
+  const notesText = notes.length
+    ? notes
+        .map(
+          (n) =>
+            `[${n.no}]《${n.title}》(${n.url})\n${truncate(n.body, 800)}`
+        )
+        .join("\n\n")
+    : "（在线资料较少，请基于你自己的知识谨慎撰写，并在该章结尾注明“本章公开资料有限，以上基于模型知识整理”。）";
+  const questionsText =
+    sec.questions && sec.questions.length
+      ? sec.questions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+      : "（无明确研究问题，请围绕章节主题展开。）";
+  const perspectivesText =
+    outline.perspectives && outline.perspectives.length
+      ? outline.perspectives.join("；")
+      : "兼顾多方视角";
+  const user =
+    `议题：${topic}\n文章标题：${outline.title}\n写作视角：${perspectivesText}\n全文各章：\n${outlineText}\n\n` +
+    `现在是第 ${index + 1}/${outline.sections.length} 章「${sec.title}」。\n\n` +
+    `本章必须回答的研究问题：\n${questionsText}\n\n` +
+    `本章可用编号资料：\n${notesText}\n\n` +
+    `上一章结尾（仅用于衔接语气，不要重复内容）：\n${prevTail || "（第一章，无上文）"}\n\n` +
+    `写作要求：\n` +
+    `1. 本章正文约 ${sectionTarget} 字；\n` +
+    `2. 以 "## ${sec.title}" 开头；\n` +
+    `3. 与上一章自然衔接，不重复已写内容；\n` +
+    `4. 逐条回答研究问题；依据资料写作，重要数据在句末加 [n] 标注；\n` +
+    `5. 只输出本章正文，不要输出章节列表、参考文献列表或解释。`;
+  return deepseekChat(apiKey, system, user, {
+    maxTokens: Math.max(1600, Math.round(sectionTarget * 1.8)),
+    temperature: 0.75,
+    signal,
+    timeoutMs: 240000,
+  });
+}
+
+async function writeLeadSection(apiKey, topic, outline, draft, sources, style, signal) {
+  const system = "你是一位资深中文编辑，负责为长文撰写导语。";
+  const draftForLead = truncate(draft, 12000);
+  const srcList = (sources || [])
+    .slice(0, 25)
+    .map((s) => `[${s.no}] ${s.title} — ${s.url}`)
+    .join("\n");
+  const styleRule =
+    style === "专业" ? "语言专业克制。" : "通俗有吸引力，像优质深度报道的开头。";
+  const user =
+    `议题：${topic}\n文章标题：${outline.title}\n全文各章：${outline.sections
+      .map((s) => s.title)
+      .join(" / ")}\n\n` +
+    `文章草稿：\n${draftForLead}\n\n` +
+    `可用引用编号：\n${srcList}\n\n` +
+    `写作要求（借鉴维基百科导语规范）：\n` +
+    `1. 导语独立成篇：点明议题、交代背景、说明为什么值得关注，并概括最重要观点与主要争议；\n` +
+    `2. 不超过 4 段、约 400-600 字；\n` +
+    `3. 重要事实用 [n] 标注引用；\n` +
+    `4. ${styleRule}\n` +
+    `5. 以 "## 导语" 开头，只输出导语本身。`;
+  return deepseekChat(apiKey, system, user, {
+    maxTokens: 1200,
+    temperature: 0.7,
+    signal,
+    timeoutMs: 180000,
+  });
+}
+
+async function reviewArticle(apiKey, topic, outline, fullText, targetChars, signal) {
+  const system = "你是一位严格的审校编辑，只依据质量规范评价文章并给出修改意见。只输出 JSON。";
+  const user =
+    `议题：${topic}\n目标篇幅：约 ${targetChars} 字\n全文各章：${outline.sections
+      .map((s, i) => `${i + 1}. ${s.title}`)
+      .join("\n")}\n\n文章全文：\n${truncate(fullText, 16000)}\n\n` +
+    "请按以下规范审校：\n" +
+    "1. 是否只依据资料、无明显编造的数据或引文；\n" +
+    "2. 各章之间是否重复、衔接是否自然；\n" +
+    "3. 每章研究问题是否都被回答；\n" +
+    "4. 引用 [n] 是否规范、参考资料是否齐全；\n" +
+    "5. 篇幅是否接近目标；结构、语气是否符合设定。\n\n" +
+    '只输出 JSON：{"ok":true或false,"issues":[{"section":章节序号1起,"problem":"问题","suggestion":"修改建议"}]}\n' +
+    "若无需修改，issues 为空数组且 ok 为 true。";
+  const raw = await deepseekChat(apiKey, system, user, {
+    maxTokens: 1500,
+    temperature: 0.2,
+    signal,
+    timeoutMs: 180000,
+  });
+  try {
+    const f = raw.indexOf("{");
+    const l = raw.lastIndexOf("}");
+    return JSON.parse(raw.slice(f, l + 1));
+  } catch (_) {
+    return { ok: true, issues: [] };
+  }
+}
+
+async function reviseSection(
+  apiKey,
+  topic,
+  outline,
+  index,
+  notes,
+  oldText,
+  feedback,
+  targetChars,
+  style,
+  signal
+) {
+  const sec = outline.sections[index];
+  const notesText = notes.length
+    ? notes
+        .map(
+          (n) =>
+            `[${n.no}]《${n.title}》(${n.url})\n${truncate(n.body, 800)}`
+        )
+        .join("\n\n")
+    : "（无）";
+  const system =
+    "你是一位资深编辑，根据审校意见修改指定章节。只输出修改后的该章正文，保持其它内容不变。";
+  const user =
+    `议题：${topic}\n文章标题：${outline.title}\n全文章节：${outline.sections
+      .map((s) => s.title)
+      .join(" / ")}\n\n` +
+    `需要修改的章节（第 ${index + 1} 章）：${sec.title}\n\n` +
+    `原章节正文：\n${truncate(oldText, 6000)}\n\n` +
+    `审校意见：\n${feedback}\n\n` +
+    `该章资料：\n${notesText}\n\n` +
+    `要求：\n1. 按审校意见重写该章，解决所有问题；\n` +
+    `2. 保留与原文一致的内容与编号引用 [n]，不新增编造事实；\n` +
+    `3. 仍以 "## ${sec.title}" 开头，只输出该章正文。`;
+  return deepseekChat(apiKey, system, user, {
+    maxTokens: Math.max(
+      1600,
+      Math.round((targetChars / Math.max(1, outline.sections.length)) * 1.8)
+    ),
+    temperature: 0.6,
+    signal,
+    timeoutMs: 240000,
+  });
+}
+
+async function runPool(items, limit, fn) {
+  let idx = 0;
+  const workers = [];
+  const next = async () => {
+    if (idx >= items.length) return;
+    const i = idx++;
+    await fn(items[i], i);
+    await next();
+  };
+  for (let k = 0; k < Math.min(limit, items.length); k++) {
+    workers.push(next());
+  }
+  await Promise.all(workers);
+}
+
+async function generateArticleStream(opts, sendEvent, signal) {
+  const { apiKey, topic, extra } = opts;
+  const targetChars = Math.max(2000, Number(opts.targetChars) || 6000);
+  const style = opts.style === "专业" ? "专业" : "通俗";
+
+  sendEvent({
+    type: "stage",
+    stage: "plan",
+    message: "正在规划文章大纲与多视角研究问题…",
+  });
+  const outline = await planArticle(apiKey, topic, extra, targetChars, signal);
+  sendEvent({
+    type: "outline",
+    title: outline.title,
+    sections: outline.sections.map((s) => s.title),
+  });
+
+  const sectionNotes = [];
+  let searched = 0;
+  sendEvent({
+    type: "progress",
+    stage: "search",
+    done: 0,
+    total: outline.sections.length,
+    message: "开始收集资料…",
+  });
+  await runPool(outline.sections, 2, async (sec, i) => {
+    checkAbort(signal);
+    sendEvent({
+      type: "progress",
+      stage: "search",
+      done: searched,
+      total: outline.sections.length,
+      message: `正在搜索资料 ${searched + 1}/${outline.sections.length}：「${sec.title}」`,
+    });
+    sectionNotes[i] = await searchSection(
+      sec.keywords,
+      sec.questions,
+      sec.title,
+      signal
+    );
+    searched++;
+    sendEvent({
+      type: "progress",
+      stage: "search",
+      done: searched,
+      total: outline.sections.length,
+      message: `资料收集 ${searched}/${outline.sections.length}`,
+    });
+  });
+
+  const allSources = [];
+  let sourceNo = 0;
+  for (const notes of sectionNotes) {
+    for (const n of notes || []) {
+      sourceNo++;
+      n.no = sourceNo;
+      allSources.push(n);
+    }
+  }
+
+  const parts = [];
+  let prevTail = "";
+  for (let i = 0; i < outline.sections.length; i++) {
+    checkAbort(signal);
+    const sec = outline.sections[i];
+    sendEvent({
+      type: "progress",
+      stage: "write",
+      done: i,
+      total: outline.sections.length,
+      message: `正在写作 ${i + 1}/${outline.sections.length}：「${sec.title}」`,
+    });
+    const text = await writeSection(
+      apiKey,
+      topic,
+      outline,
+      i,
+      sectionNotes[i] || [],
+      prevTail,
+      targetChars,
+      style,
+      signal
+    );
+    parts.push(text);
+    prevTail = truncate(text, 500);
+  }
+
+  checkAbort(signal);
+  const bodyNoLead = parts.join("\n\n");
+  sendEvent({
+    type: "progress",
+    stage: "lead",
+    done: 0,
+    total: 1,
+    message: "正在撰写导语…",
+  });
+  const lead = await writeLeadSection(
+    apiKey,
+    topic,
+    outline,
+    bodyNoLead,
+    allSources,
+    style,
+    signal
+  );
+  let body = `${lead}\n\n${bodyNoLead}`;
+
+  checkAbort(signal);
+  sendEvent({
+    type: "progress",
+    stage: "review",
+    done: 0,
+    total: 1,
+    message: "审校中…",
+  });
+  const review = await reviewArticle(
+    apiKey,
+    topic,
+    outline,
+    body,
+    targetChars,
+    signal
+  );
+  const issues = (review && Array.isArray(review.issues) ? review.issues : []).filter(
+    (it) =>
+      it &&
+      Number(it.section) >= 1 &&
+      Number(it.section) <= outline.sections.length
+  );
+  const revised = new Set();
+  let revisedCount = 0;
+  for (const issue of issues) {
+    if (revisedCount >= 2) break;
+    const idx = Number(issue.section) - 1;
+    if (revised.has(idx)) continue;
+    revised.add(idx);
+    revisedCount++;
+    checkAbort(signal);
+    sendEvent({
+      type: "progress",
+      stage: "revise",
+      done: revisedCount,
+      total: Math.min(2, issues.length),
+      message: `根据审校意见修改第 ${idx + 1} 章…`,
+    });
+    parts[idx] = await reviseSection(
+      apiKey,
+      topic,
+      outline,
+      idx,
+      sectionNotes[idx] || [],
+      parts[idx],
+      `问题：${issue.problem}\n建议：${issue.suggestion}`,
+      targetChars,
+      style,
+      signal
+    );
+  }
+  if (revised.size) {
+    body = `${lead}\n\n${parts.join("\n\n")}`;
+  }
+
+  checkAbort(signal);
+  const charCount = body.replace(/\s/g, "").length;
+  let content = `# ${outline.title}\n\n`;
+  if (outline.summary) content += `> ${outline.summary}\n\n`;
+  content += body + "\n";
+  if (allSources.length) {
+    content +=
+      "\n\n---\n\n## 参考资料\n\n" +
+      allSources
+        .map((s) => `[${s.no}] ${s.title || s.url} — ${s.url}`)
+        .join("\n") +
+      "\n";
+  }
+  content +=
+    `\n\n---\n\n*本文由 biliSub「议题成文」融合 STORM 与 GPT Researcher 方法，基于公开网络资料自动生成，正文约 ${charCount} 字。*`;
+  sendEvent({
+    type: "done",
+    title: outline.title,
+    content,
+    charCount,
+    sections: outline.sections.map((s) => s.title),
+    sources: allSources.map((s) => ({ title: s.title, url: s.url })),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // 工具
@@ -393,6 +1272,77 @@ async function handleApi(req, res, url, body) {
     if (!/^https?:/i.test(subUrl)) subUrl = "https:" + subUrl;
     const r = await biliGet(subUrl, "https://www.bilibili.com/video/");
     return sendJson(res, 200, { json: r.json, cookies: cookiesArray() });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/article/generate") {
+    const apiKey =
+      String(body.apiKey || "").trim() || serverConfig.deepseekApiKey || "";
+    const topic = String(body.topic || "").trim();
+    if (!apiKey) return sendJson(res, 400, { error: "缺少 DeepSeek API Key" });
+    if (!topic) return sendJson(res, 400, { error: "请输入议题" });
+    if (topic.length > 200) {
+      return sendJson(res, 400, { error: "议题太长了（最多 200 字）" });
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    const sendEvent = (obj) => {
+      try {
+        res.write("data: " + JSON.stringify(obj) + "\n\n");
+      } catch (_) {}
+    };
+    const requestId = String(body.requestId || "");
+    const controller = new AbortController();
+    if (requestId) activeAIRequests.set(requestId, controller);
+    const timer = setTimeout(() => controller.abort(), 30 * 60 * 1000);
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch (_) {}
+    }, 20000);
+    req.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    try {
+      await generateArticleStream(
+        {
+          apiKey,
+          topic,
+          extra: String(body.extra || "").trim(),
+          targetChars: Number(body.targetChars) || 6000,
+          style: String(body.style || "通俗"),
+        },
+        sendEvent,
+        controller.signal
+      );
+    } catch (e) {
+      if (controller.signal.aborted || (e && e.name === "AbortError")) {
+        sendEvent({ type: "cancelled", message: "已取消" });
+      } else {
+        sendEvent({
+          type: "error",
+          message: String((e && e.message) || e).slice(0, 500),
+        });
+      }
+    } finally {
+      clearTimeout(timer);
+      clearInterval(heartbeat);
+      if (requestId) activeAIRequests.delete(requestId);
+      try {
+        res.end();
+      } catch (_) {}
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/article/cancel") {
+    const requestId = String(body.requestId || "");
+    const controller = activeAIRequests.get(requestId);
+    if (controller) controller.abort();
+    return sendJson(res, 200, { ok: true, cancelled: !!controller });
   }
 
   if (req.method === "POST" && url.pathname === "/api/ai/chat") {

@@ -12,6 +12,11 @@
     aiBusy: false,
     aiAbort: null,
     aiRequestId: "",
+    articleBusy: false,
+    articleAbort: null,
+    articleRequestId: "",
+    articleSavedId: null,
+    articleFinished: false,
     serverHasAiKey: false,
     shortName: true,
   };
@@ -886,6 +891,180 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   }
 
   // ---------------- 事件绑定 ----------------
+  // ---------------- 议题成文 ----------------
+  function appendArticleLog(msg) {
+    const el = $("article-log");
+    el.textContent += msg + "\n";
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setArticleProgress(value, status) {
+    $("article-progress").value = value;
+    $("article-percent").textContent = Math.round(value) + "%";
+    if (status) $("article-status").textContent = status;
+  }
+
+  async function handleArticleEvent(ev) {
+    if (!ev || !ev.type) return;
+    if (ev.type === "stage") {
+      appendArticleLog("▸ " + (ev.message || "处理中…"));
+      $("article-status").textContent = ev.message || "处理中…";
+    } else if (ev.type === "outline") {
+      const n = (ev.sections || []).length;
+      appendArticleLog(`▸ 大纲已生成（${n} 章）：${ev.title}`);
+      $("article-status").textContent = `大纲已生成，共 ${n} 章`;
+    } else if (ev.type === "progress") {
+      const done = Number(ev.done) || 0;
+      const total = Number(ev.total) || 1;
+      let pct = 0;
+      if (ev.stage === "search") pct = 8 + Math.round((done / total) * 32);
+      else if (ev.stage === "write") pct = 40 + Math.round((done / total) * 32);
+      else if (ev.stage === "lead") pct = 72 + Math.round((done / total) * 6);
+      else if (ev.stage === "review") pct = 78 + Math.round((done / total) * 8);
+      else if (ev.stage === "revise") pct = 86 + Math.round((done / total) * 10);
+      setArticleProgress(pct, ev.message || "");
+    } else if (ev.type === "done") {
+      try {
+        const settings = aiSettings();
+        let short = "";
+        try {
+          short = await ai.shortFileName(ev.title, settings);
+        } catch (_) {}
+        if (!short) short = ai.fallbackShortName(ev.title);
+        const name = `${short}-文章.md`;
+        const saved = await storage.saveFile({
+          name,
+          ext: "md",
+          content: ev.content || "",
+          bvid: "",
+          lang: "",
+          meta: {
+            from: "议题成文",
+            topic: $("article-topic").value.trim(),
+            sources: (ev.sources || []).length,
+          },
+        });
+        state.articleSavedId = saved.id;
+        $("article-result-name").textContent =
+          name +
+          `（${(ev.charCount || 0).toLocaleString()} 字，${
+            (ev.sources || []).length
+          } 个参考来源）`;
+        try {
+          $("article-preview").innerHTML = window.marked
+            ? marked.parse(ev.content, { breaks: true, gfm: true })
+            : "<pre>" + escapeHtml(ev.content) + "</pre>";
+        } catch (_) {
+          $("article-preview").innerHTML =
+            "<pre>" + escapeHtml(ev.content) + "</pre>";
+        }
+        $("article-result-card").hidden = false;
+        $("article-progress").value = 100;
+        $("article-percent").textContent = "100%";
+        $("article-status").textContent = "生成完成";
+        appendArticleLog(
+          `✔ 已保存：${name}（${(ev.charCount || 0).toLocaleString()} 字）`
+        );
+        await refreshDocs();
+        openReader(saved.id);
+      } catch (e) {
+        appendArticleLog("✘ 保存失败：" + e.message);
+        $("article-status").textContent = "生成完成，但保存失败";
+      }
+    } else if (ev.type === "cancelled") {
+      state.articleFinished = true;
+      appendArticleLog("已取消。");
+      $("article-status").textContent = "已取消";
+    } else if (ev.type === "error") {
+      state.articleFinished = true;
+      appendArticleLog("✘ 失败：" + (ev.message || "未知错误"));
+      $("article-status").textContent = "生成失败";
+    }
+    if (ev.type === "done") state.articleFinished = true;
+  }
+
+  async function startArticle() {
+    if (state.articleBusy) return;
+    const apiKey = $("ai-key").value.trim();
+    if (!apiKey && !state.serverHasAiKey) {
+      alert("请先在「设置」页填写 DeepSeek API Key，或由服务端配置。");
+      switchView("settings");
+      return;
+    }
+    const topic = $("article-topic").value.trim();
+    if (!topic) {
+      alert("请输入议题。");
+      return;
+    }
+    const extra = $("article-extra").value.trim();
+    const targetChars = Number($("article-length").value) || 6000;
+    const style = $("article-style").value;
+    state.articleBusy = true;
+    state.articleAbort = new AbortController();
+    state.articleRequestId =
+      "art_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2, 8);
+    state.articleSavedId = null;
+    state.articleFinished = false;
+    $("article-start").disabled = true;
+    $("article-cancel").disabled = false;
+    $("article-progress-card").hidden = false;
+    $("article-result-card").hidden = true;
+    $("article-progress").value = 0;
+    $("article-percent").textContent = "0%";
+    $("article-log").textContent = "";
+    $("article-status").textContent = "准备中…";
+    appendArticleLog("议题：" + topic);
+    if (extra) appendArticleLog("补充要求：" + extra);
+    appendArticleLog(`目标篇幅：约 ${targetChars} 字 · 风格：${style}`);
+    const settings = aiSettings();
+    try {
+      await api.articleGenerate(
+        {
+          apiKey: settings.apiKey,
+          topic,
+          extra,
+          targetChars,
+          style,
+          requestId: state.articleRequestId,
+        },
+        handleArticleEvent,
+        state.articleAbort.signal
+      );
+      if (!state.articleFinished) {
+        appendArticleLog("✘ 连接中断，未收到生成结果，请重试。");
+        $("article-status").textContent = "连接中断";
+      }
+    } catch (e) {
+      if (ai.isCancelled(e)) {
+        appendArticleLog("已取消。");
+        $("article-status").textContent = "已取消";
+      } else {
+        appendArticleLog("✘ 失败：" + e.message);
+        $("article-status").textContent = "生成失败";
+      }
+    } finally {
+      state.articleBusy = false;
+      state.articleAbort = null;
+      state.articleRequestId = "";
+      $("article-start").disabled = false;
+      $("article-cancel").disabled = true;
+    }
+  }
+
+  async function cancelArticle() {
+    if (!state.articleBusy) return;
+    if (state.articleAbort) state.articleAbort.abort();
+    if (state.articleRequestId) {
+      try {
+        await api.articleCancel(state.articleRequestId);
+      } catch (_) {}
+    }
+    appendArticleLog("正在取消…");
+  }
+
   function bindEvents() {
     document.querySelectorAll(".tab").forEach((b) =>
       b.addEventListener("click", () => switchView(b.dataset.view))
@@ -904,6 +1083,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       if (confirm("确定退出 B 站登录吗？")) {
         await clearCookies();
       }
+    });
+
+    $("article-start").addEventListener("click", startArticle);
+    $("article-cancel").addEventListener("click", cancelArticle);
+    $("article-open").addEventListener("click", () => {
+      if (state.articleSavedId) openReader(state.articleSavedId);
     });
 
     $("start-btn").addEventListener("click", startDownload);

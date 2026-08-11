@@ -85,6 +85,52 @@
       return this.get("/api/bili/subtitle", { url });
     },
 
+    async articleGenerate(payload, onEvent, signal) {
+      const resp = await fetch("/api/article/generate", {
+        method: "POST",
+        headers: Object.assign(
+          { "Content-Type": "application/json" },
+          authHeaders()
+        ),
+        body: JSON.stringify(payload || {}),
+        signal: signal || undefined,
+      });
+      if (!resp.ok) {
+        let data = {};
+        try {
+          data = await resp.json();
+        } catch (_) {}
+        throw new Error(data.error || "HTTP " + resp.status);
+      }
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      const dispatch = (chunk) => {
+        for (const line of String(chunk || "").split("\n")) {
+          if (line.startsWith("data: ")) {
+            try {
+              onEvent(JSON.parse(line.slice(6)));
+            } catch (_) {}
+          }
+        }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          dispatch(buf.slice(0, idx));
+          buf = buf.slice(idx + 2);
+        }
+      }
+      if (buf.trim()) dispatch(buf);
+    },
+
+    articleCancel(requestId) {
+      return this.post("/api/article/cancel", { requestId });
+    },
+
     aiChat(payload, signal) {
       return this.post("/api/ai/chat", payload, signal);
     },
