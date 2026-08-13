@@ -1,8 +1,8 @@
 {
   "name": "bilisub-web",
-  "version": "1.0.0",
+  "version": "7.0.0",
   "private": true,
-  "description": "biliSub Web：B站字幕下载 + 文件管理 + 阅读器 + DeepSeek 润色/科普文章",
+  "description": "biliSub Web：B站字幕下载 + 文件管理 + 阅读器 + DeepSeek 润色/科普文章（模块化重构版）",
   "scripts": {
     "start": "node server.js"
   },

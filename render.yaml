@@ -1,15 +1,22 @@
+# Render 蓝图配置：一个 web 服务，从 GitHub 仓库自动部署
+# 部署方式：Render → New + → Blueprint → 选择仓库，Render 自动识别此文件
 services:
   - type: web
     name: bilisub
     runtime: node
     plan: free
+    # 只安装 dependencies（marked/qrcode），跳过 devDependencies（esbuild）
     buildCommand: |
       npm install --omit=dev
+    # 入口：node server.js（lib/ 下为拆分后的模块）
     startCommand: node server.js
     envVars:
+      # DeepSeek API Key：议题成文/字幕润色/科普文章都会用到，部署时手动填写（不上传 GitHub）
       - key: DEEPSEEK_API_KEY
         sync: false
+      # 访问口令：手机打开网站时输入，防止陌生人蹭用 Key 额度，部署时手动填写
       - key: ACCESS_TOKEN
         sync: false
+      # 必须绑定 0.0.0.0 才能对外提供访问
       - key: BIND_HOST
         value: 0.0.0.0

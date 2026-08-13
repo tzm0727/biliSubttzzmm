@@ -31,6 +31,43 @@ node server.js
 5. 使用「润色」「生成文章」或「议题成文」前，先在「设置」页填写 DeepSeek API Key（云端部署时服务端已配置可跳过）。
 6. 所有数据保存在浏览器本地（IndexedDB / localStorage），关闭页面不丢失；清除浏览器数据会清空。
 
+## 项目结构（v7 模块化）
+
+```
+biliSub-cloud-package/
+├── server.js            # 入口：HTTP 服务 + 静态文件 + 请求分发
+├── lib/                 # 后端模块（CommonJS）
+│   ├── constants.js     #   运行时常量
+│   ├── config.js        #   配置加载（环境变量 + server-config.json）
+│   ├── utils.js         #   通用工具
+│   ├── cookie-jar.js    #   B 站 Cookie 罐
+│   ├── bili-client.js   #   B 站 HTTP 客户端 + WBI 签名
+│   ├── deepseek.js      #   DeepSeek 对话封装
+│   ├── search.js        #   免费搜索源聚合
+│   ├── article-engine.js #  议题成文引擎
+│   └── routes.js        #   API 路由
+├── sync-to-git.ps1      # 同步源码到 Git 仓库并提交/推送的脚本
+└── public/
+    ├── index.html
+    ├── css/style.css
+    ├── js/              # 前端模块（IIFE + window.ui 命名空间）
+    │   ├── storage.js / api.js / ai.js   # 数据层 / 通信层 / AI 功能层
+    │   ├── core.js      # 状态机 + 工具 + 视图切换
+    │   ├── login.js / download.js / docs.js / reader.js / ai-modal.js / article.js
+    │   └── app.js       # 入口（初始化 + 事件绑定）
+    ├── libs/            # marked / qrcode（浏览器版）
+    └── skills/          # AI 提示词（transcript-polisher / science-writing）
+```
+
+## 开发工作流
+
+修改代码在 `biliSub-cloud-package`，同步到 Git 仓库用脚本：
+
+```powershell
+.\sync-to-git.ps1                              # 仅同步文件
+.\sync-to-git.ps1 -Message "更新说明" -Push     # 同步 + commit + push（触发 Render 部署）
+```
+
 ## 说明
 
 - 本机服务 `server.js` 只用于电脑浏览器测试阶段；后续打包安卓版时，会改为在 App 内直接调用接口。
