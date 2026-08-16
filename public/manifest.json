@@ -1,0 +1,20 @@
+{
+  "name": "bilisub · 个人成长助手",
+  "short_name": "bilisub",
+  "description": "B 站字幕下载、AI 写作与个人成长管理",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

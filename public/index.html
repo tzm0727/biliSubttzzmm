@@ -4,130 +4,387 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>biliSub Web</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>bilisub</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-title" content="bilisub">
+  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/growth.css?v=14">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">biliSub <span class="version">Web v7</span></div>
+    <div class="topbar-head">
+      <div class="topbar-date-row">
+        <span class="brand-logo"><svg viewBox="0 0 1024 1024"><rect width="1024" height="1024" rx="230" fill="#1a5fd6"/><g transform="translate(224,224) scale(24)" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z"/><path d="M18 12v.5"/><path d="M16 17.93a9.77 9.77 0 0 1 0-11.86"/><path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33"/><path d="M10.46 7.26C10.2 5.88 9.17 4.24 8 3h5.8a2 2 0 0 1 1.98 1.67l.23 1.4"/><path d="m16.01 17.93-.23 1.4A2 2 0 0 1 13.8 21H9.5a5.96 5.96 0 0 0 1.49-3.98"/></g></svg></span>
+        <div class="topbar-date" id="topbar-date"></div>
+      </div>
+      <div class="topbar-title" id="topbar-title">今天</div>
+    </div>
     <div class="login-box">
-      <span id="login-status" class="badge off">未登录</span>
-      <button id="login-btn" class="btn small">扫码登录</button>
-      <button id="logout-btn" class="btn small ghost" hidden>退出</button>
+      <button id="login-btn" class="avatar-btn" title="登录 B 站">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+      </button>
+      <button id="logout-btn" class="avatar-btn logged" hidden title="退出登录">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
+      </button>
     </div>
   </header>
 
   <nav class="tabs">
-    <button class="tab" data-view="article"><span class="tab-icon">✍️</span><span>生成文章</span></button>
-    <button class="tab active" data-view="download"><span class="tab-icon">⬇️</span><span>下载</span></button>
-    <button class="tab" data-view="docs"><span class="tab-icon">📄</span><span>文档</span></button>
-    <button class="tab" data-view="reader"><span class="tab-icon">📖</span><span>阅读</span></button>
-    <button class="tab" data-view="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
+    <button class="tab active" data-view="today"><span class="tab-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 9h18M8 3v4M16 3v4"/></svg></span><span>今天</span></button>
+    <button class="tab" data-view="growth"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span>成长</span></button>
+    <button class="tab" data-view="article"><span class="tab-icon"><svg viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6z"/><path d="M9 2v5h5M9 12h6M9 16h6"/></svg></span><span>文章</span></button>
+    <button class="tab" data-view="settings"><span class="tab-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></span><span>设置</span></button>
   </nav>
 
   <main>
+    <section id="view-today" class="view active">
+      <div class="feature-card" id="mood-card">
+        <div class="feature-kicker">心情打卡</div>
+        <div class="feature-title" id="mood-title">今天感觉怎么样？</div>
+        <div class="mood-row" id="mood-row"></div>
+        <button class="mood-more" id="mood-more">记录详情与原因</button>
+      </div>
+      <div class="card quote-card" id="quote-card"></div>
+      <div class="section-header">
+        <div class="section-title">今日习惯</div>
+        <div class="section-actions">
+          <button class="section-link" id="forgiveness-count">宽恕卡</button>
+          <button class="section-link" id="habit-add">＋ 新建</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <div class="habit-today" id="habit-today"></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title">目标</div>
+        <button class="section-link" id="goal-add">＋ 新目标</button>
+      </div>
+      <div class="goal-strip" id="goal-strip"></div>
+      <div class="section-header">
+        <div class="section-title">今日事项</div>
+        <span class="task-progress" id="task-progress"></span>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <div class="timeline" id="timeline"></div>
+      </div>
+      <button class="btn add-btn" id="task-add">＋ 添加事项</button>
+      <div class="section-header">
+        <div class="section-title">生活记录</div>
+        <button class="section-link" id="life-add">＋ 记录</button>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <div class="life-today" id="life-today"></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title">日记</div>
+        <div class="section-actions">
+          <button class="section-link" id="review-add">复盘</button>
+          <button class="section-link" id="diary-all">查看全部</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="diary-quick" id="diary-quick"></div>
+      </div>
+    </section>
+
+    <section id="view-growth" class="view">
+      <div class="growth-overview" id="growth-overview">
+        <div class="feature-kicker">个人成长</div>
+        <div class="growth-overview-title" id="growth-level">Lv.1 · 成长新手</div>
+        <div class="growth-overview-sub" id="growth-level-progress">记录 0 天 · 0 XP</div>
+        <div class="growth-overview-stats">
+          <div class="growth-stat"><div class="v" id="ov-mood">—</div><div class="k">本月心情</div></div>
+          <div class="growth-stat"><div class="v" id="ov-habit">—</div><div class="k">习惯完成率</div></div>
+          <div class="growth-stat"><div class="v" id="ov-focus">—</div><div class="k">专注分钟</div></div>
+          <div class="growth-stat"><div class="v" id="ov-streak">—</div><div class="k">连续打卡</div></div>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">自动化</div>
+        <button class="section-link" id="automation-add">＋ 新建</button>
+      </div>
+      <div class="card">
+        <div id="automation-list"></div>
+      </div>
+      <div class="section-header">
+        <div class="section-title">最近报告</div>
+        <button class="section-link" id="report-refresh">刷新</button>
+      </div>
+      <div class="card">
+        <div id="report-list"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">心情日历</div>
+      </div>
+      <div class="card">
+        <div class="card-head-row">
+          <span class="card-title" id="cal-title">本月</span>
+          <span class="card-actions">
+            <button class="btn small ghost" id="cal-prev">‹ 上月</button>
+            <button class="btn small ghost" id="cal-next">下月 ›</button>
+          </span>
+        </div>
+        <div class="cal-week">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">心情趋势</div>
+        <button class="section-link" id="trend-range">近 30 天</button>
+      </div>
+      <div class="card">
+        <canvas id="mood-trend" height="160"></canvas>
+        <p class="hint" id="mood-trend-hint">记录心情后这里会出现趋势图</p>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">习惯热力图</div>
+        <button class="section-link" id="habit-open">管理习惯</button>
+      </div>
+      <div class="card">
+        <div class="heatmap" id="habit-heatmap"></div>
+        <p class="hint">近 12 周，颜色越深完成越多</p>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">目标进度</div>
+      </div>
+      <div class="goal-strip" id="growth-goals"></div>
+
+      <details class="growth-more" id="growth-more">
+        <summary>更多功能</summary>
+      <div class="section-header">
+        <div class="section-title">专注</div>
+      </div>
+      <div class="card">
+        <div class="focus-timer">
+          <div class="focus-time" id="focus-time">25:00</div>
+          <div class="focus-actions">
+            <button id="focus-start" class="btn primary">开始</button>
+            <button id="focus-reset" class="btn ghost">重置</button>
+          </div>
+        </div>
+        <div class="focus-sessions" id="focus-sessions"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">复盘</div>
+        <button class="section-link" id="review-add-growth">写复盘</button>
+      </div>
+      <div class="card">
+        <div id="review-list"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">AI 生活周报</div>
+      </div>
+      <div class="card">
+        <p class="hint">汇总最近 7 天的心情、习惯、专注与复盘，用 DeepSeek 生成一份专属周报。</p>
+        <div class="btn-row">
+          <button id="ai-weekly" class="btn primary">生成本周周报</button>
+        </div>
+        <div id="ai-weekly-result" class="ai-text"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">记账</div>
+        <button class="section-link" id="finance-add">＋ 记一笔</button>
+      </div>
+      <div class="card">
+        <div id="finance-summary"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">技能投入</div>
+        <button class="section-link" id="skill-add">＋ 记录</button>
+      </div>
+      <div class="card">
+        <div id="skill-list"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">知识卡片</div>
+        <button class="section-link" id="card-add">＋ 摘抄</button>
+      </div>
+      <div class="card">
+        <div id="card-list"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">徽章墙</div>
+      </div>
+      <div class="card">
+        <div class="badge-wall" id="badge-wall"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">记忆回顾</div>
+      </div>
+      <div class="card">
+        <div class="btn-row">
+          <button id="memory-yesterday" class="btn">去年今天</button>
+          <button id="memory-random" class="btn">随机回忆</button>
+        </div>
+        <p class="hint">从你的日记和知识卡片里，翻出一条过去的记录。</p>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">Wrapped 总结</div>
+      </div>
+      <div class="card">
+        <div class="btn-row">
+          <button id="wrapped-open" class="btn primary">生成本月 Wrapped</button>
+        </div>
+        <p class="hint">一键生成可分享的成长总结卡片。</p>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">情绪相关性</div>
+      </div>
+      <div class="card">
+        <div id="correlation"></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">AI 教练</div>
+      </div>
+      <div class="card">
+        <textarea id="coach-question" rows="2" maxlength="200" placeholder="例如：我这周状态怎么样？睡眠对心情影响大吗？"></textarea>
+        <div class="btn-row">
+          <button id="coach-ask" class="btn primary">问 AI 教练</button>
+        </div>
+        <div id="coach-result" class="ai-text"></div>
+      </div>
+      </details>
+    </section>
+
     <section id="view-article" class="view">
-      <div class="card">
-        <label class="field-label" for="article-topic">想写什么议题？</label>
-        <textarea id="article-topic" rows="3" maxlength="200" placeholder="例如：AI Agent 行业现状，未来会取代程序员吗？&#10;固态电池到底能不能落地？"></textarea>
-        <p class="hint">AI 会先规划大纲、搜索公开资料，再分章写作并审校，完成后自动保存、打开阅读（约 5~15 分钟）。</p>
-        <label class="field-label" for="article-extra">补充要求（可选）</label>
-        <input id="article-extra" type="text" maxlength="120" placeholder="例如：多讲落地案例，少讲概念">
-        <div class="fmt-row">
-          <span class="field-label">篇幅：</span>
-          <select id="article-length" class="select">
-            <option value="3000">短文（约 3000 字）</option>
-            <option value="6000" selected>标准（约 6000 字）</option>
-            <option value="10000">深度（约 10000 字）</option>
-          </select>
-          <span class="field-label">风格：</span>
-          <select id="article-style" class="select">
-            <option value="通俗" selected>通俗科普</option>
-            <option value="专业">专业深度</option>
-          </select>
-        </div>
-        <div class="btn-row">
-          <button id="article-start" class="btn primary">开始生成</button>
-          <button id="article-cancel" class="btn" disabled>取消</button>
+      <div class="segmented" id="article-seg">
+        <button class="seg-btn active" data-pane="download">下载</button>
+        <button class="seg-btn" data-pane="write">写文章</button>
+        <button class="seg-btn" data-pane="docs">文档</button>
+      </div>
+      <div class="pane active" id="pane-download">
+        <div class="card">
+          <label class="field-label" for="links">视频链接（每行一个，支持 B站 BV / av / b23.tv / 分P）</label>
+          <textarea id="links" rows="5" placeholder="https://www.bilibili.com/video/BV1xx411c79H&#10;https://b23.tv/xxxxxx?p=2"></textarea>
+          <div class="fmt-row">
+            <span class="field-label">输出格式：</span>
+            <label class="check"><input type="checkbox" value="txt" checked> TXT</label>
+            <label class="check"><input type="checkbox" value="srt"> SRT</label>
+            <label class="check"><input type="checkbox" value="ass"> ASS</label>
+            <label class="check"><input type="checkbox" value="vtt"> VTT</label>
+            <label class="check"><input type="checkbox" value="json"> JSON</label>
+            <label class="check"><input type="checkbox" value="lrc"> LRC</label>
+          </div>
+          <div class="btn-row">
+            <button id="start-btn" class="btn primary">开始下载</button>
+            <button id="cancel-btn" class="btn" disabled>取消</button>
+          </div>
+          <div class="progress-wrap">
+            <progress id="dl-progress" max="100" value="0"></progress>
+            <span id="dl-percent">0%</span>
+          </div>
+          <div id="dl-status" class="status">就绪</div>
+          <pre id="dl-log" class="log"></pre>
         </div>
       </div>
-
-      <div class="card" id="article-progress-card" hidden>
-        <h2>生成进度</h2>
-        <div class="progress-wrap">
-          <progress id="article-progress" max="100" value="0"></progress>
-          <span id="article-percent">0%</span>
+      <div class="pane" id="pane-write">
+        <div class="card">
+          <label class="field-label" for="article-topic">想写什么议题？</label>
+          <textarea id="article-topic" rows="3" maxlength="200" placeholder="例如：AI Agent 行业现状，未来会取代程序员吗？&#10;固态电池到底能不能落地？"></textarea>
+          <p class="hint">AI 会先规划大纲、搜索公开资料，再分章写作并审校，完成后自动保存、打开阅读（约 5~15 分钟）。</p>
+          <label class="field-label" for="article-extra">补充要求（可选）</label>
+          <input id="article-extra" type="text" maxlength="120" placeholder="例如：多讲落地案例，少讲概念">
+          <div class="fmt-row">
+            <span class="field-label">篇幅：</span>
+            <select id="article-length" class="select">
+              <option value="3000">短文（约 3000 字）</option>
+              <option value="6000" selected>标准（约 6000 字）</option>
+              <option value="10000">深度（约 10000 字）</option>
+            </select>
+            <span class="field-label">风格：</span>
+            <select id="article-style" class="select">
+              <option value="通俗" selected>通俗科普</option>
+              <option value="专业">专业深度</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button id="article-start" class="btn primary">开始生成</button>
+            <button id="article-cancel" class="btn" disabled>取消</button>
+          </div>
         </div>
-        <div id="article-status" class="status">准备中…</div>
-        <pre id="article-log" class="log"></pre>
+        <div class="card" id="article-progress-card" hidden>
+          <h2>生成进度</h2>
+          <div class="progress-wrap">
+            <progress id="article-progress" max="100" value="0"></progress>
+            <span id="article-percent">0%</span>
+          </div>
+          <div id="article-status" class="status">准备中…</div>
+          <pre id="article-log" class="log"></pre>
+        </div>
+        <div class="card" id="article-result-card" hidden>
+          <div class="toolbar">
+            <span id="article-result-name" class="doc-name"></span>
+            <button id="article-open" class="btn primary">立即阅读</button>
+          </div>
+          <div id="article-preview" class="reader-content article-preview"></div>
+        </div>
       </div>
-
-      <div class="card" id="article-result-card" hidden>
-        <div class="toolbar">
-          <span id="article-result-name" class="doc-name"></span>
-          <button id="article-open" class="btn primary">立即阅读</button>
+      <div class="pane" id="pane-docs">
+        <div class="card">
+          <div class="toolbar">
+            <input id="doc-search" type="search" placeholder="搜索文件名…">
+            <button id="import-btn" class="btn">导入文件</button>
+            <input id="import-input" type="file" multiple accept=".txt,.srt,.vtt,.ass,.json,.lrc,.md" hidden>
+          </div>
+          <div id="doc-list" class="doc-list"></div>
         </div>
-        <div id="article-preview" class="reader-content article-preview"></div>
-      </div>
-    </section>
-
-    <section id="view-download" class="view active">
-      <div class="card">
-      <label class="field-label" for="links">视频链接（每行一个，支持 B站 BV / av / b23.tv / 分P）</label>
-        <textarea id="links" rows="5" placeholder="https://www.bilibili.com/video/BV1xx411c79H&#10;https://b23.tv/xxxxxx?p=2"></textarea>
-
-        <div class="fmt-row">
-          <span class="field-label">输出格式：</span>
-          <label class="check"><input type="checkbox" value="txt" checked> TXT</label>
-          <label class="check"><input type="checkbox" value="srt"> SRT</label>
-          <label class="check"><input type="checkbox" value="ass"> ASS</label>
-          <label class="check"><input type="checkbox" value="vtt"> VTT</label>
-          <label class="check"><input type="checkbox" value="json"> JSON</label>
-          <label class="check"><input type="checkbox" value="lrc"> LRC</label>
-        </div>
-
-        <div class="btn-row">
-          <button id="start-btn" class="btn primary">开始下载</button>
-          <button id="cancel-btn" class="btn" disabled>取消</button>
-        </div>
-
-        <div class="progress-wrap">
-          <progress id="dl-progress" max="100" value="0"></progress>
-          <span id="dl-percent">0%</span>
-        </div>
-        <div id="dl-status" class="status">就绪</div>
-        <pre id="dl-log" class="log"></pre>
-      </div>
-    </section>
-
-    <section id="view-docs" class="view">
-      <div class="card">
-        <div class="toolbar">
-          <input id="doc-search" type="search" placeholder="搜索文件名…">
-          <button id="import-btn" class="btn">导入文件</button>
-          <input id="import-input" type="file" multiple accept=".txt,.srt,.vtt,.ass,.json,.lrc,.md" hidden>
-        </div>
-        <div id="doc-list" class="doc-list"></div>
       </div>
     </section>
 
     <section id="view-reader" class="view">
       <div class="reader-toolbar">
-        <button id="reader-back" class="btn ghost">‹ 返回文档</button>
+        <button id="reader-back" class="btn ghost">‹</button>
         <span id="reader-name" class="reader-name"></span>
         <span id="reader-stats" class="reader-stats"></span>
         <span class="spacer"></span>
+        <button id="reader-toc" class="btn ghost">目录</button>
         <button id="reader-theme" class="btn ghost">夜间</button>
         <button id="reader-font-minus" class="btn ghost">A−</button>
         <button id="reader-font-plus" class="btn ghost">A+</button>
         <button id="reader-export" class="btn ghost">导出</button>
       </div>
       <article id="reader-content" class="reader-content" tabindex="0"></article>
+      <div class="toc-panel" id="toc-panel" hidden>
+        <div class="toc-header">
+          <span class="toc-header-title">目录</span>
+          <button id="toc-close" class="btn ghost small">关闭</button>
+        </div>
+        <div class="toc-list" id="toc-list"></div>
+      </div>
     </section>
 
     <section id="view-settings" class="view">
-      <div class="card">
-        <h2>AI 设置（DeepSeek）</h2>
+      <details class="settings-group card" open>
+        <summary>外观</summary>
+        <label class="field-label" for="hero-theme">主卡片风格</label>
+        <select id="hero-theme">
+          <option value="soft">淡雅（浅色渐变）</option>
+          <option value="vivid">标准（彩色渐变）</option>
+        </select>
+        <p class="hint">淡雅风格更接近 Apple Liquid Glass，标准风格色彩更鲜艳。</p>
+      </details>
+      <details class="settings-group card" open>
+        <summary>AI 设置（DeepSeek）</summary>
         <p id="server-key-hint" class="hint" hidden>本机服务已配置 DeepSeek Key，手机上可以不填。</p>
         <label class="field-label" for="ai-key">API Key</label>
         <input id="ai-key" type="password" placeholder="sk-..." autocomplete="off">
@@ -146,35 +403,41 @@
           <button id="save-ai-btn" class="btn primary">保存设置</button>
         </div>
         <p class="hint">API Key 只保存在本机浏览器（localStorage），仅发送给你自己的本地服务调用 DeepSeek，不会上传到其它地方。</p>
-      </div>
-
-      <div class="card">
-        <h2>访问口令</h2>
+      </details>
+      <details class="settings-group card">
+        <summary>访问口令</summary>
         <label class="field-label" for="access-token">访问口令（保护公共链接，防别人蹭用）</label>
         <input id="access-token" type="password" placeholder="请输入访问口令" autocomplete="off">
         <p class="hint">口令由运行服务的人提供，只保存在本机浏览器。保存 AI 设置时会一起保存。</p>
-      </div>
-
-      <div class="card">
-        <h2>B 站登录 Cookie（高级）</h2>
+      </details>
+      <details class="settings-group card">
+        <summary>B 站登录 Cookie（高级）</summary>
         <textarea id="cookie-text" rows="3" placeholder="SESSDATA=...; bili_jct=...; buvid3=..."></textarea>
         <div class="btn-row">
           <button id="save-cookie-btn" class="btn">保存 Cookie</button>
           <button id="clear-cookie-btn" class="btn ghost">清除</button>
         </div>
         <p class="hint">下载 B 站字幕需要登录。扫码登录失败时可手动粘贴浏览器里的 B 站 Cookie，Cookie 仅保存在本机。</p>
-      </div>
-
-      <div class="card">
-        <h2>关于</h2>
-        <p>本地服务地址：<code>http://127.0.0.1:8324</code></p>
+      </details>
+      <details class="settings-group card">
+        <summary>数据备份</summary>
+        <p class="hint">导出全部生活数据（日记、心情、习惯、目标、专注、记账等）为 JSON 文件，换设备或清理浏览器后可一键恢复。</p>
+        <div class="btn-row">
+          <button id="export-all" class="btn primary">导出备份</button>
+          <button id="import-all" class="btn">导入恢复</button>
+          <input id="import-all-input" type="file" accept=".json,application/json" hidden>
+        </div>
+      </details>
+      <details class="settings-group card">
+        <summary>关于</summary>
+        <p>bilisub · V1.0</p>
+        <p>数据（日记、心情、习惯、目标、生活记录、专注、记账、文档、字幕）都保存在<strong>本机的浏览器数据库</strong>（IndexedDB）里，不依赖任何服务器。</p>
         <p>下载的字幕、润色和科普文章都保存在<strong>当前手机的浏览器数据库</strong>（IndexedDB）里，不会上传到电脑或云端。</p>
         <p>删除 = 从手机浏览器数据库永久移除，没有回收站；想留底请点「导出/分享」保存成真实文件。</p>
-      </div>
+      </details>
     </section>
   </main>
 
-  <!-- 扫码登录弹窗 -->
   <div id="qr-modal" class="modal" hidden>
     <div class="modal-box">
       <h3>扫码登录 B 站</h3>
@@ -190,7 +453,6 @@
     </div>
   </div>
 
-  <!-- AI 处理弹窗 -->
   <div id="ai-modal" class="modal" hidden>
     <div class="modal-box">
       <h3 id="ai-title">AI 处理中…</h3>
@@ -206,18 +468,422 @@
     </div>
   </div>
 
-  <script src="libs/qrcode.min.js?v=7"></script>
-  <script src="libs/marked.min.js?v=7"></script>
-  <script src="js/storage.js?v=7"></script>
-  <script src="js/api.js?v=7"></script>
-  <script src="js/ai.js?v=7"></script>
-  <script src="js/core.js?v=7"></script>
-  <script src="js/login.js?v=7"></script>
-  <script src="js/download.js?v=7"></script>
-  <script src="js/docs.js?v=7"></script>
-  <script src="js/reader.js?v=7"></script>
-  <script src="js/ai-modal.js?v=7"></script>
-  <script src="js/article.js?v=7"></script>
-  <script src="js/app.js?v=7"></script>
+  <div id="goal-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="goal-modal-title">新目标</h3>
+      <label class="field-label">目标名称</label>
+      <input id="goal-title" type="text" maxlength="40" placeholder="例如：减到 60kg">
+      <label class="field-label">截止日期</label>
+      <input id="goal-enddate" type="date">
+      <details class="advanced">
+        <summary>进度与事项（可选）</summary>
+      <div class="fmt-row" style="gap:8px">
+        <div style="flex:1">
+          <label class="field-label">当前</label>
+          <input id="goal-current" type="number" inputmode="decimal" placeholder="70">
+        </div>
+        <div style="flex:1">
+          <label class="field-label">目标</label>
+          <input id="goal-target" type="number" inputmode="decimal" placeholder="60">
+        </div>
+        <div style="flex:1">
+          <label class="field-label">单位</label>
+          <input id="goal-unit" type="text" maxlength="6" placeholder="kg">
+        </div>
+      </div>
+      <label class="field-label">每日事项（每行一个，可选）</label>
+      <textarea id="goal-daily" rows="3" placeholder="喝水 2L&#10;运动 30 分钟"></textarea>
+      <label class="field-label">里程碑（每行一个，可选）</label>
+      <textarea id="goal-milestones" rows="3" placeholder="第一周：减少夜宵&#10;第二周：体重到 66kg"></textarea>
+      <div id="goal-checks-wrap" hidden>
+        <label class="field-label">今日打卡</label>
+        <div id="goal-checks"></div>
+      </div>
+      <div id="goal-milestones-wrap" hidden>
+        <label class="field-label">里程碑进度</label>
+        <div id="goal-milestone-checks"></div>
+      </div>
+      <div id="goal-history-wrap" hidden>
+        <label class="field-label">数值变化</label>
+        <div id="goal-history"></div>
+      </div>
+      </details>
+      <div class="btn-row">
+        <button id="goal-save" class="btn primary">保存</button>
+        <button id="goal-delete" class="btn" hidden>删除</button>
+        <button id="goal-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="task-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>添加事项</h3>
+      <label class="field-label">事项内容</label>
+      <input id="task-title" type="text" maxlength="60" placeholder="要做什么？">
+      <label class="field-label">时间（可选）</label>
+      <input id="task-time" type="time">
+      <details class="advanced">
+        <summary>更多（可选）</summary>
+        <label class="field-label">优先级</label>
+        <select id="task-priority" class="select" style="width:100%">
+          <option value="normal">普通</option>
+          <option value="high">重要</option>
+        </select>
+        <label class="field-label">关联目标（可选）</label>
+        <select id="task-goal" class="select" style="width:100%"><option value="">不关联</option></select>
+      </details>
+      <div class="btn-row">
+        <button id="task-save" class="btn primary">添加</button>
+        <button id="task-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="diary-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>写日记</h3>
+      <div class="mood-row center" id="diary-mood"></div>
+      <input id="diary-tags" type="text" maxlength="60" placeholder="标签，用空格分隔（可选）">
+      <textarea id="diary-content" rows="4" maxlength="2000" placeholder="今天发生了什么？"></textarea>
+      <button id="diary-voice" class="btn" hidden>🎤 语音输入</button>
+      <div class="diary-imgs" id="diary-imgs"></div>
+      <div class="btn-row">
+        <button id="diary-add-img" class="btn">📷 加图片</button>
+        <input id="diary-img-input" type="file" accept="image/*" multiple hidden>
+      </div>
+      <div class="btn-row">
+        <button id="diary-save" class="btn primary">保存</button>
+        <button id="diary-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="group-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="group-title">合集</h3>
+      <div class="group-files" id="group-files"></div>
+      <div class="btn-row center">
+        <button id="group-close" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mood-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>记录此刻心情</h3>
+      <div class="mood-quick" id="mood-quick"></div>
+      <div id="mood-detail-wrap" hidden>
+        <div class="mood-options" id="mood-options"></div>
+        <label class="field-label">情绪强度</label>
+        <div class="intensity-row" id="mood-intensity"></div>
+        <label class="field-label">可能与什么有关？（可多选）</label>
+        <div class="chip-row" id="mood-triggers"></div>
+        <label class="field-label">备注（可选）</label>
+        <textarea id="mood-note" rows="2" placeholder="一句话说说发生了什么"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="mood-quick-more" class="btn">记录详情</button>
+        <button id="mood-back" class="btn ghost" hidden>返回快速打卡</button>
+        <button id="mood-save" class="btn primary" hidden>保存</button>
+        <button id="mood-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="habit-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="habit-modal-title">新建习惯</h3>
+      <label class="field-label">习惯名称</label>
+      <input id="habit-name" type="text" maxlength="20" placeholder="例如：早起 / 运动 / 读书 20 分钟">
+      <label class="field-label">频率</label>
+      <div class="seg-mini" id="habit-freq-seg">
+        <button class="seg-mini-btn active" data-freq="daily">每天</button>
+        <button class="seg-mini-btn" data-freq="weekdays">工作日</button>
+        <button class="seg-mini-btn" data-freq="weekly">每周</button>
+      </div>
+      <div id="habit-weekly-wrap" hidden>
+        <label class="field-label">每周目标次数</label>
+        <div class="digit-row" id="habit-weekly-pick"></div>
+        <input id="habit-weekly" type="hidden" value="3">
+      </div>
+      <label class="field-label">图标（点一下换一个）</label>
+      <button id="habit-emoji" class="habit-emoji-btn">✅</button>
+      <div class="btn-row">
+        <button id="habit-save" class="btn primary">保存</button>
+        <button id="habit-delete" class="btn" hidden>删除</button>
+        <button id="habit-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="life-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>记录生活</h3>
+      <label class="field-label">类型</label>
+      <div class="chip-row" id="life-type-pick"></div>
+      <div class="quick-values" id="life-quick-values"></div>
+      <label class="field-label" id="life-amount-label">数值</label>
+      <input id="life-amount" type="number" inputmode="decimal" step="0.1" min="0">
+      <label class="field-label">备注（可选）</label>
+      <input id="life-note" type="text" maxlength="60" placeholder="例如：夜跑 5 公里">
+      <div class="btn-row">
+        <button id="life-save" class="btn primary">保存</button>
+        <button id="life-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="review-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>写复盘</h3>
+      <label class="field-label">类型</label>
+      <div class="seg-mini" id="review-type-seg">
+        <button class="seg-mini-btn active" data-type="evening">晚间</button>
+        <button class="seg-mini-btn" data-type="morning">晨间</button>
+        <button class="seg-mini-btn" data-type="weekly">周复盘</button>
+      </div>
+      <label class="field-label">今天最想记的一句话</label>
+      <textarea id="review-core" rows="3" placeholder="例如：今天完成了最难的一件事…"></textarea>
+      <div class="chip-row" id="review-template-row">
+        <button class="chip" data-target="good">三件好事</button>
+        <button class="chip" data-target="learn">收获与反思</button>
+        <button class="chip" data-target="plan">明日计划</button>
+      </div>
+      <div id="review-good-wrap" hidden>
+        <label class="field-label">三件好事 / 值得感恩的事</label>
+        <textarea id="review-good" rows="2"></textarea>
+      </div>
+      <div id="review-learn-wrap" hidden>
+        <label class="field-label">收获与反思</label>
+        <textarea id="review-learn" rows="2"></textarea>
+      </div>
+      <div id="review-plan-wrap" hidden>
+        <label class="field-label">明日计划</label>
+        <textarea id="review-plan" rows="2"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="review-save" class="btn primary">保存</button>
+        <button id="review-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="finance-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>记一笔</h3>
+      <div class="segmented" id="finance-type-seg">
+        <button class="seg-btn active" data-type="expense">支出</button>
+        <button class="seg-btn" data-type="income">收入</button>
+      </div>
+      <label class="field-label">金额</label>
+      <input id="finance-amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">
+      <label class="field-label">分类</label>
+      <div class="chip-row" id="finance-category-pick"></div>
+      <label class="field-label">备注（可选）</label>
+      <input id="finance-note" type="text" maxlength="40" placeholder="例如：午餐">
+      <div class="btn-row">
+        <button id="finance-save" class="btn primary">保存</button>
+        <button id="finance-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="skill-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>记录技能投入</h3>
+      <label class="field-label">技能 / 领域</label>
+      <input id="skill-name" type="text" maxlength="20" placeholder="例如：英语 / 编程 / 健身">
+      <div class="fmt-row" style="gap:8px">
+        <div style="flex:1">
+          <label class="field-label">投入时长（小时）</label>
+          <input id="skill-hours" type="number" inputmode="decimal" step="0.5" min="0">
+        </div>
+        <div style="flex:1">
+          <label class="field-label">分类</label>
+          <select id="skill-category" class="select" style="width:100%">
+            <option>学习</option>
+            <option>工作</option>
+            <option>健康</option>
+            <option>兴趣</option>
+          </select>
+        </div>
+      </div>
+      <label class="field-label">备注（可选）</label>
+      <input id="skill-note" type="text" maxlength="60" placeholder="例如：背了 50 个单词">
+      <div class="btn-row">
+        <button id="skill-save" class="btn primary">保存</button>
+        <button id="skill-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="card-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>摘抄知识卡片</h3>
+      <label class="field-label">出处（可选）</label>
+      <input id="card-source" type="text" maxlength="60" placeholder="例如：书名 / 文章 / 视频">
+      <label class="field-label">内容</label>
+      <textarea id="card-text" rows="4" maxlength="500" placeholder="一句让你记住的话…"></textarea>
+      <div class="btn-row">
+        <button id="card-save" class="btn primary">保存</button>
+        <button id="card-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="automation-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="automation-modal-title">新建自动化</h3>
+      <label class="field-label">模板</label>
+      <div class="template-row" id="auto-templates">
+        <button class="template-chip active" data-template="morning">☀️ 晨间新闻</button>
+        <button class="template-chip" data-template="evening">🌙 晚间复盘</button>
+        <button class="template-chip" data-template="bedtime">💤 睡前一句话</button>
+        <button class="template-chip" data-template="custom">✍️ 自定义</button>
+      </div>
+      <label class="field-label">名称</label>
+      <input id="auto-name" type="text" maxlength="30" placeholder="例如：晨间 AI 新闻简报">
+      <label class="field-label">时间</label>
+      <input id="auto-time" type="time" value="09:00">
+      <label class="field-label">内容要求（一句话）</label>
+      <textarea id="auto-topic" rows="2" maxlength="500" placeholder="例如：只关注 AI 行业，选 5 条最重要的新闻"></textarea>
+      <div class="btn-row">
+        <button id="auto-save" class="btn primary">保存</button>
+        <button id="auto-run" class="btn" hidden>立即运行</button>
+        <button id="auto-delete" class="btn" hidden>删除</button>
+        <button id="auto-close" class="btn ghost">取消</button>
+      </div>
+      <details class="advanced" id="auto-advanced">
+        <summary>更多设置（可跳过）</summary>
+        <label class="field-label">频率</label>
+        <select id="auto-frequency" class="select" style="width:100%">
+          <option value="daily">每天</option>
+          <option value="weekdays">工作日</option>
+          <option value="weekly">每周</option>
+          <option value="once">单次</option>
+        </select>
+        <div id="auto-weekdays-wrap" hidden>
+          <label class="field-label">每周哪几天</label>
+          <div class="chip-row" id="auto-weekdays"></div>
+        </div>
+        <div id="auto-once-wrap" hidden>
+          <label class="field-label">执行日期</label>
+          <input id="auto-once-date" type="date">
+        </div>
+        <label class="field-label">任务类型</label>
+        <select id="auto-task" class="select" style="width:100%">
+          <option value="news">AI 新闻简报</option>
+          <option value="personal">个人生活报告</option>
+          <option value="custom">自定义报告</option>
+        </select>
+        <label class="field-label">风格 Skill</label>
+        <div class="chip-row" id="auto-style-pick"></div>
+        <div id="auto-custom-style-wrap" hidden>
+          <label class="field-label">自定义风格说明</label>
+          <textarea id="auto-custom-style" rows="3" maxlength="1000" placeholder="用 100-300 字描述你想要的文风…"></textarea>
+        </div>
+        <label class="field-label">风格遵循度</label>
+        <select id="auto-style-level" class="select" style="width:100%">
+          <option value="1">轻模仿</option>
+          <option value="2" selected>标准</option>
+          <option value="3">严格</option>
+        </select>
+        <label class="field-label">篇幅</label>
+        <select id="auto-length" class="select" style="width:100%">
+          <option value="short">短（300-500 字）</option>
+          <option value="standard" selected>标准（600-1000 字）</option>
+          <option value="long">长（1200-2000 字）</option>
+        </select>
+        <label class="field-label">保留天数</label>
+        <select id="auto-retention" class="select" style="width:100%">
+          <option value="7">7 天</option>
+          <option value="30" selected>30 天</option>
+          <option value="90">90 天</option>
+          <option value="0">永久</option>
+        </select>
+        <label class="field-label">新闻来源（每行一个网址，留空用内置源）</label>
+        <textarea id="auto-sources" rows="2" placeholder="https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"></textarea>
+        <label class="check block"><input id="auto-enabled" type="checkbox" checked> 启用定时自动生成</label>
+        <label class="check block"><input id="auto-notify" type="checkbox" checked> 生成后弹浏览器通知</label>
+      </details>
+    </div>
+  </div>
+
+  <div id="report-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="report-modal-title">报告</h3>
+      <div id="report-modal-meta" class="report-meta"></div>
+      <div id="report-modal-content" class="reader-content"></div>
+      <div class="btn-row">
+        <button id="report-export-md" class="btn">导出 Markdown</button>
+        <button id="report-export-epub" class="btn">导出 EPUB</button>
+        <button id="report-delete" class="btn">删除</button>
+        <button id="report-close" class="btn ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="memory-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="memory-title">回忆</h3>
+      <div id="memory-date" class="hint"></div>
+      <div id="memory-content" class="memory-content"></div>
+      <div class="btn-row center">
+        <button id="memory-close" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wrapped-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="wrapped-title">本月 Wrapped</h3>
+      <div id="wrapped-card" class="wrapped-card"></div>
+      <div class="btn-row">
+        <button id="wrapped-export" class="btn primary">导出 Markdown</button>
+        <button id="wrapped-close" class="btn ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="habit-patch-modal" class="modal" hidden>
+    <div class="modal-box">
+      <h3>补打卡（消耗 1 张宽恕卡）</h3>
+      <label class="field-label">选择日期</label>
+      <input id="habit-patch-date" type="date">
+      <p class="hint" id="habit-patch-name"></p>
+      <div class="btn-row">
+        <button id="habit-patch-save" class="btn primary">确认补卡</button>
+        <button id="habit-patch-close" class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="libs/qrcode.min.js?v=14"></script>
+  <script src="libs/marked.min.js?v=14"></script>
+  <script src="js/storage.js?v=14"></script>
+  <script src="js/api.js?v=14"></script>
+  <script src="js/ai.js?v=14"></script>
+  <script src="js/core.js?v=14"></script>
+  <script src="js/login.js?v=14"></script>
+  <script src="js/download.js?v=14"></script>
+  <script src="js/docs.js?v=14"></script>
+  <script src="js/reader.js?v=14"></script>
+  <script src="js/ai-modal.js?v=14"></script>
+  <script src="js/article.js?v=14"></script>
+  <script src="js/goals.js?v=14"></script>
+  <script src="js/diary.js?v=14"></script>
+  <script src="js/today.js?v=14"></script>
+  <script src="js/mood.js?v=14"></script>
+  <script src="js/habits.js?v=14"></script>
+  <script src="js/life.js?v=14"></script>
+  <script src="js/reviews.js?v=14"></script>
+  <script src="js/growth.js?v=14"></script>
+  <script src="js/backup.js?v=14"></script>
+  <script src="js/automation.js?v=14"></script>
+  <script src="js/badges.js?v=14"></script>
+  <script src="js/fun.js?v=14"></script>
+  <script src="js/coach.js?v=14"></script>
+  <script src="js/app.js?v=14"></script>
 </body>
 </html>

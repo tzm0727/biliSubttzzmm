@@ -1,5 +1,13 @@
-// 与本地服务通信；B 站登录 Cookie 会随响应自动回存到 localStorage
+// 与内置服务通信；B 站登录 Cookie 会随响应自动回存到 localStorage
 (function () {
+  // 始终使用同源后端（APK 内 WebView 加载 127.0.0.1:8325，相对路径自动连内置服务）
+  function baseUrl() {
+    return "";
+  }
+  function u(path) {
+    return baseUrl() + path;
+  }
+
   async function handle(resp) {
     let data;
     try {
@@ -32,7 +40,7 @@
 
   const api = {
     async get(path, params) {
-      const resp = await fetch(path + qs(params), {
+      const resp = await fetch(u(path) + qs(params), {
         cache: "no-store",
         headers: authHeaders(),
       });
@@ -40,7 +48,7 @@
     },
 
     async post(path, body, signal) {
-      const resp = await fetch(path, {
+      const resp = await fetch(u(path), {
         method: "POST",
         headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
         body: JSON.stringify(body || {}),
@@ -86,7 +94,7 @@
     },
 
     async articleGenerate(payload, onEvent, signal) {
-      const resp = await fetch("/api/article/generate", {
+      const resp = await fetch(u("/api/article/generate"), {
         method: "POST",
         headers: Object.assign(
           { "Content-Type": "application/json" },
@@ -137,6 +145,16 @@
 
     cancelAi(requestId) {
       return this.post("/api/ai/cancel", { requestId });
+    },
+
+    async exportEpub(title, content) {
+      const resp = await fetch(u("/api/export/epub"), {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+        body: JSON.stringify({ title: title || "未命名", content: content || "" }),
+      });
+      if (!resp.ok) throw new Error("导出失败（HTTP " + resp.status + "）");
+      return resp.blob();
     },
   };
 

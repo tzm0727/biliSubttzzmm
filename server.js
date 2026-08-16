@@ -19,6 +19,7 @@ const { PORT, PUBLIC_DIR, BIND_HOST, MIME } = require("./lib/constants");
 const { serverConfig } = require("./lib/config");
 const { handleApi } = require("./lib/routes");
 const { sendJson, readBody } = require("./lib/utils");
+const automation = require("./lib/automation");
 
 function serveStatic(req, res, url) {
   let pathname;
@@ -74,4 +75,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, BIND_HOST, () => {
   console.log(`biliSub Web 已启动：http://127.0.0.1:${PORT}`);
   console.log("按 Ctrl+C 停止服务。");
+  automation.start();
 });

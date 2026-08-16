@@ -6,17 +6,10 @@
     try {
       const data = await api.nav();
       const isLogin = !!(data.json && data.json.data && data.json.data.isLogin);
-      const badge = ui.$("login-status");
-      badge.textContent = isLogin ? "已登录" : "未登录";
-      badge.classList.toggle("on", isLogin);
-      badge.classList.toggle("off", !isLogin);
       ui.$("login-btn").hidden = isLogin;
       ui.$("logout-btn").hidden = !isLogin;
     } catch (_) {
-      const badge = ui.$("login-status");
-      badge.textContent = "服务未连接";
-      badge.classList.add("off");
-      badge.classList.remove("on");
+      // 服务未连接时保持默认（未登录头像）
     }
   }
 

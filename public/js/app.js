@@ -6,8 +6,39 @@
   async function init() {
     ui.applyTheme(storage.loadTheme());
     ui.applyFont(storage.loadFontSize());
+    ui.applyHeroTheme(ui.loadHeroTheme());
     ui.loadAiSettings();
     bindEvents();
+    // 生活模块：绑定事件并渲染「今天」页
+    try {
+      ui.bindGoals();
+      ui.bindDiary();
+      ui.bindMood();
+      ui.bindHabits();
+      ui.bindLife();
+      ui.bindReviews();
+      ui.bindGrowth();
+      ui.bindBackup();
+      ui.bindAutomation();
+      ui.bindFun();
+      ui.bindCoach();
+      ui.bindToday();
+      ui.bindReader();
+      ui.bindDocs();
+      try {
+        const n = await storage.migrateLegacyMood();
+        if (n > 0) ui.showToast("已迁移 " + n + " 条旧版心情记录");
+      } catch (_) {}
+      await ui.renderToday();
+    } catch (_) {}
+    try {
+      const pruned = await storage.pruneReports(30);
+      if (pruned > 0) ui.showToast("已自动清理 " + pruned + " 条过期报告");
+      await ui.syncAutomationsToServer();
+      await ui.importServerReports();
+      ui.startAutomationScheduler();
+      if (ui.checkBadges) ui.checkBadges();
+    } catch (_) {}
     try {
       await api.sendCookies(storage.loadBiliCookies());
     } catch (_) {}
@@ -31,6 +62,9 @@
   function bindEvents() {
     document.querySelectorAll(".tab").forEach((b) =>
       b.addEventListener("click", () => ui.switchView(b.dataset.view))
+    );
+    document.querySelectorAll("#article-seg .seg-btn").forEach((b) =>
+      b.addEventListener("click", () => ui.switchArticlePane(b.dataset.pane))
     );
 
     ui.$("login-btn").addEventListener("click", () => {
@@ -74,7 +108,8 @@
 
     ui.$("reader-back").addEventListener("click", () => {
       ui.saveReaderPos();
-      ui.switchView("docs");
+      ui.switchView("article");
+      ui.switchArticlePane("docs");
     });
     ui.$("reader-export").addEventListener("click", () => {
       if (ui.state.currentFile) ui.exportFile(ui.state.currentFile);
@@ -111,6 +146,21 @@
       ui.$("ai-modal").hidden = true;
     });
     ui.$("ai-cancel").addEventListener("click", ui.cancelAi);
+
+    const heroSelect = ui.$("hero-theme");
+    if (heroSelect) {
+      heroSelect.value = ui.loadHeroTheme();
+      heroSelect.addEventListener("change", () => {
+        ui.saveHeroTheme(heroSelect.value);
+        ui.applyHeroTheme(heroSelect.value);
+      });
+    }
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      });
+    }
   }
 
   window.addEventListener("DOMContentLoaded", init);

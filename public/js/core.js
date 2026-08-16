@@ -5,7 +5,8 @@
 
   const $ = (id) => document.getElementById(id);
   const state = {
-    view: "download",
+    view: "today",
+    articlePane: "download",
     files: [],
     currentFile: null,
     dlRunning: false,
@@ -85,6 +86,25 @@
   }
 
   // ---------------- 视图切换 ----------------
+  const VIEW_TITLES = {
+    today: "今天",
+    growth: "成长",
+    article: "文章",
+    settings: "设置",
+    reader: "阅读",
+  };
+
+  function switchArticlePane(pane) {
+    state.articlePane = pane;
+    document.querySelectorAll("#article-seg .seg-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.pane === pane);
+    });
+    document.querySelectorAll(".pane").forEach((p) => {
+      p.classList.toggle("active", p.id === "pane-" + pane);
+    });
+    if (pane === "docs") ui.refreshDocs();
+  }
+
   function switchView(view) {
     state.view = view;
     document.querySelectorAll(".tab").forEach((b) => {
@@ -93,7 +113,11 @@
     document.querySelectorAll(".view").forEach((v) => {
       v.classList.toggle("active", v.id === "view-" + view);
     });
-    if (view === "docs") ui.refreshDocs();
+    const titleEl = $("topbar-title");
+    if (titleEl) titleEl.textContent = VIEW_TITLES[view] || "";
+    if (view === "article") switchArticlePane(state.articlePane);
+    if (view === "today" && ui.renderToday) ui.renderToday();
+    if (view === "growth" && ui.renderGrowth) ui.renderGrowth();
     if (view === "reader" && !state.currentFile) {
       $("reader-name").textContent = "";
       $("reader-content").innerHTML =
@@ -110,6 +134,19 @@
 
   function applyFont(px) {
     document.documentElement.style.setProperty("--font-size", px + "px");
+  }
+
+  // 卡片主题：soft 淡雅（默认）/ vivid 标准
+  function applyHeroTheme(theme) {
+    document.body.classList.toggle("hero-vivid", theme === "vivid");
+  }
+
+  function loadHeroTheme() {
+    return localStorage.getItem("biliSub_hero_theme") || "soft";
+  }
+
+  function saveHeroTheme(theme) {
+    localStorage.setItem("biliSub_hero_theme", theme === "vivid" ? "vivid" : "soft");
   }
 
   // ---------------- AI 设置 ----------------
@@ -145,6 +182,30 @@
     };
   }
 
+  // ---------------- 共享选项（情绪 / 触发因素） ----------------
+  const MOOD_OPTIONS = [
+    { e: "😄", label: "开心" },
+    { e: "😊", label: "满足" },
+    { e: "🙂", label: "平静" },
+    { e: "😐", label: "一般" },
+    { e: "🥱", label: "疲惫" },
+    { e: "😰", label: "焦虑" },
+    { e: "😤", label: "生气" },
+    { e: "😔", label: "低落" },
+    { e: "😢", label: "难过" },
+    { e: "🤩", label: "激动" },
+  ];
+  const MOOD_TRIGGERS = [
+    "睡眠不足",
+    "工作/学习压力",
+    "运动",
+    "社交",
+    "天气",
+    "饮食",
+    "家人/朋友",
+    "其他",
+  ];
+
   Object.assign(ui, {
     $,
     state,
@@ -157,10 +218,16 @@
     appendLog,
     setDlProgress,
     switchView,
+    switchArticlePane,
     applyTheme,
     applyFont,
+    applyHeroTheme,
+    loadHeroTheme,
+    saveHeroTheme,
     loadAiSettings,
     saveAiSettings,
     aiSettings,
+    MOOD_OPTIONS,
+    MOOD_TRIGGERS,
   });
 })();

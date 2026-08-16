@@ -6,3 +6,13 @@ server-config.json
 启动biliSub.bat
 start-server.bat
 start-tunnel.bat
+
+# Android 构建产物
+android/.gradle/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# 本地缓存
+.npm-apk-cache/
